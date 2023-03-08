@@ -1,8 +1,10 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
+import utils
 from einshape import jax_einshape as einshape
 jax.config.update("jax_enable_x64", True)
+
 
 @jax.jit
 def A1Mult(phi, dt, dx):
@@ -126,8 +128,30 @@ def get_minimizer_ind(rho_candidates, shift_term, c, a, c_in_H):
   return rho_min[0,:,:]
 
 
+def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
+  '''
+  @parameters:
+    delta_phi: [nt, nx]
+    phi_prev: [nt, nx]
+    fv: [nx], complex
+    dt: scalar
+  @return:
+    phi_next: [nt, nx]
+  '''
+  nt, nx = jnp.shape(delta_phi)
+  v_Fourier =  jnp.fft.fft(delta_phi, axis = 1) #[nt, nx]
+  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-1,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-1,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  thomas_b = einshape('n->mn', fv - 2/(dt*dt), m = nt) #[nt, nx]
+  phi_fouir_part = jnp.concatenate([jax.lax.linalg.tridiagonal_solve(dl, thomas_b[:,i], du, v_Fourier[:,i:i+1]) for i in range(nx)], axis = 1) #[nt, nx]
+  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1) #[nt, nx]
+  phi_next = phi_prev + F_phi_updates
+  return phi_next
+
+
+@partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
-                              g, dx, dt, c_on_rho, if_precondition, Aprecond_func, nt, nx):
+                              g, dx, dt, c_on_rho, if_precondition, fv):
   '''
   @ parameters
     f_in_H: [1, nx]
@@ -143,8 +167,9 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
     dt: scalar
     c_on_rho: scaler
     if_precondition: bool
+    fv: [nx]
+    
     Aprecond_func: function = lambda x: Aprecondition @ x
-    nt, nx: scalar
 
   @ return 
     rho_next: [nt-1, nx]
@@ -154,64 +179,60 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
     err: jnp.array([err1, err2,err3])
   '''
 
-  delta_phi_raw = - tau * (A1TransMult(m_prev) + A2TransMult(rho_prev))
-  delta_phi = jnp.concatenate([delta_phi_raw[0:1,:] + tau* mu_prev, delta_phi_raw[1:,:]], axis = 0)
+  delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev)) #[nt, nx]
+  delta_phi = jnp.concatenate([delta_phi_raw[0:1,:] + tau* mu_prev, delta_phi_raw[1:,:]], axis = 0) #[nt, nx]
 
   if if_precondition:
-      # % preconditioning: D(phi - phi_prev) = -delta_phi, phi_1 = g
-      # % [D; Abd] * phi = [D*phi_prev - delta_phi; g]
-
-    b = [D* phi_prev(:) - delta_phi(:); g(:)]
-    # phi_next = jaxopt.linear_solve.solve_bicgstab(Aprecond_func, b)
-    phi_next = reshape(phi_next, [nt, nx]);
+    phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt);
   else:
     # no preconditioning
-    phi_next = phi_prev - delta_phi;
+    phi_next = phi_prev - delta_phi
 
-    # extrapolation
-    phi_bar = 2 * phi_next - phi_prev
-    
-    # update mu
-    # inf_{mu} sum_i mu_i *(g_i- phi_{1,i}) + |mu - mu^l|^2/(2*sigma)
-    mu_next = mu_prev + sigma * (phi_bar[0:1,:] - g)
+  # extrapolation
+  phi_bar = 2 * phi_next - phi_prev
+  
+  # update mu
+  # inf_{mu} sum_i mu_i *(g_i- phi_{1,i}) + |mu - mu^l|^2/(2*sigma)
+  mu_next = mu_prev + sigma * (phi_bar[0:1,:] - g)
 
-    rho_candidates = []
-    vec1 = m_prev - sigma * A1Mult(phi_bar)  # [nt-1, nx]
-    vec1_left = jnp.roll(vec1, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
-    vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
-    rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
+  rho_candidates = []
+  vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
+  vec1_left = jnp.roll(vec1, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
+  vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
+  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
 
-    # two possible quadratic terms on G, 4 combinations
-    vec3 = -c_in_H * c_in_H * c_on_rho - vec1 * c_in_H
-    vec4 = -c_in_H * c_in_H * c_on_rho + vec1_left * c_in_H
-    rho_candidates.append(jnp.maximum(vec2, - c_on_rho))  # for rho large, G = 0
-    rho_candidates.append(jnp.maximum((vec2 + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
-    rho_candidates.append(jnp.maximum((vec2 + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
-    rho_candidates.append(jnp.maximum((vec2 + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
-    
-    rho_candidates = jnp.array(rho_candidates) # [5, nt-1, nx]
-    rho_next = get_minimizer_ind(rho_candidates, vec2, c_on_rho, vec1, c_in_H)
-    # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
-    m_next = jnp.minimum(jnp.maximum(vec1, -(rho_next + c_on_rho) * c_in_H), 
-                         (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
+  # two possible quadratic terms on G, 4 combinations
+  vec3 = -c_in_H * c_in_H * c_on_rho - vec1 * c_in_H
+  vec4 = -c_in_H * c_in_H * c_on_rho + vec1_left * c_in_H
+  rho_candidates.append(jnp.maximum(vec2, - c_on_rho))  # for rho large, G = 0
+  rho_candidates.append(jnp.maximum((vec2 + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
+  rho_candidates.append(jnp.maximum((vec2 + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
+  rho_candidates.append(jnp.maximum((vec2 + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
+  
+  rho_candidates = jnp.array(rho_candidates) # [5, nt-1, nx]
+  rho_next = get_minimizer_ind(rho_candidates, vec2, c_on_rho, vec1, c_in_H)
+  # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
+  m_next = jnp.minimum(jnp.maximum(vec1, -(rho_next + c_on_rho) * c_in_H), 
+                        (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
 
-    # primal error
-    err1 = jnp.linalg.norm(phi_next - phi_prev)
-    # err2: dual error
-    err2_rho = jnp.linalg.norm(rho_next - rho_prev)
-    err2_m = jnp.linalg.norm(m_next - m_prev)
-    err2_mu = jnp.linalg.norm(mu_next - mu_prev)
-    err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m + err2_mu*err2_mu)
-    # err3: equation error
-    HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H);
-    err3 = jnp.mean(jnp.abs(HJ_residual))
-    
-    return rho_next, phi_next, m_next, mu_next, jnp.array([err1, err2,err3])
+  # primal error
+  err1 = jnp.linalg.norm(phi_next - phi_prev)
+  # err2: dual error
+  err2_rho = jnp.linalg.norm(rho_next - rho_prev)
+  err2_m = jnp.linalg.norm(m_next - m_prev)
+  err2_mu = jnp.linalg.norm(mu_next - mu_prev)
+  err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m + err2_mu*err2_mu)
+  # err3: equation error
+  HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H);
+  err3 = jnp.mean(jnp.abs(HJ_residual))
+  
+  return rho_next, phi_next, m_next, mu_next, jnp.array([err1, err2,err3])
 
 
-
+@utils.timeit
 def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
-                                          g, dx, dt, c_on_rho, if_precondition):
+                                          g, dx, dt, c_on_rho, if_precondition, 
+                                          N_maxiter = 1000000, eps = 1e-6):
   '''
   @ parameters:
     f_in_H: [1, nx]
@@ -226,25 +247,23 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     dt: scalar
     c_on_rho: scaler
     if_precondition: bool
+    N_maxiter: int
+    eps: scalar
 
   @ return 
     phi: [nt, nx]
     error_all: [#pdhg iter, 3]
   '''
-  N_maxiter = 1e7
-  eps = 1e-6
   nt,nx = jnp.shape(phi0)
   phi_prev = phi0
   rho_prev = rho0
   m_prev = m0
   mu_prev = mu0
-  pdhg_param = 1
-  error_all = jnp.zeros((N_maxiter, 3));
 
   if if_precondition:
-    tau = stepsz_param;
+    tau = stepsz_param
   else:
-    tau = stepsz_param / (2*dt/dx + 3);
+    tau = stepsz_param / (2*dt/dx + 3)
 
   sigma = tau
   sigma_scale = 1.5
@@ -252,26 +271,21 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
   tau = tau / sigma_scale
 
 
-  # Dx = -A1 / dt;
-  # Dt = -A2 / dt;
-  # % preconditioning: min <v, phi> + |(Dx; Dt)(phi - phi_prev)|^2/2tau
-  # ind_bd1 = 1: nx;
-  # ind_bd2 = sub2ind([nt, nx], ones(nx, 1), (1:nx)');  % index of initial condition (1,j)
-  # Abd = sparse(ind_bd1, ind_bd2, ones(nx,1), nx, nt*nx);
-  # % 0 = tau* v + [Dx;Dt]^T[Dx; Dt](phi - phi_prev)
-  # % g = phi_1
-  # D = [Dx; Dt]'*[Dx; Dt];
-  # Aprecondition = [D; Abd];
-
+  if if_precondition:
+    # fft for preconditioning
+    Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
+    fv = jnp.fft.fft(Lap_vec); #[nx]
+  else:
+    fv = None
 
   error_all = []
   for i in range(N_maxiter):
     rho_next, phi_next, m_next, mu_next, error = pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
-                                                                           g, dx, dt, c_on_rho, if_precondition, nt, nx)
+                                                                           g, dx, dt, c_on_rho, if_precondition, fv)
     error_all.append(error)
     if error[0] < eps and error[1] < eps:
       break
-    if i % 10000 == 0:
+    if i % 100 == 0:
       print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]));
    
     rho_prev = rho_next
@@ -282,17 +296,24 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
 
 
 
-
-
-
-
 if __name__ == "__main__":
-  # rho = jnp.ones((3,2))
-  # rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
-  # rho_k = jnp.pad(rho, ((0,1),(0,0)),  mode = 'constant', constant_values=0.0)
-  # print(rho_km1)
-  # print(rho_k)
-  a = jnp.reshape(jnp.arange(8), (2,4))
-  b = einshape("ij->(ij)k", a, k = 2)
-  print(b)
-  pass
+  nt = 200
+  nx = 100
+  key = jax.random.PRNGKey(0)
+  f_in_H = jax.random.uniform(jax.random.PRNGKey(1), shape = [1, nx]) 
+  c_in_H = jax.random.uniform(jax.random.PRNGKey(2), shape = [1, nx]) 
+  phi0 = jax.random.uniform(jax.random.PRNGKey(3), shape = [nt, nx]) 
+  rho0 = jax.random.uniform(jax.random.PRNGKey(4), shape = [nt-1, nx]) 
+  m0 = jax.random.uniform(jax.random.PRNGKey(5), shape = [nt-1, nx]) 
+  mu0 = jax.random.uniform(jax.random.PRNGKey(6), shape = [1, nx]) 
+  stepsz_param = 1
+  g = jax.random.uniform(jax.random.PRNGKey(7), shape = [1, nx]) 
+  dx = 0.001
+  dt = 0.0001
+  c_on_rho = 1
+  if_precondition = True
+  N_maxiter = 1000
+  eps = 1e-6
+  pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+                                          g, dx, dt, c_on_rho, if_precondition, 
+                                          N_maxiter = N_maxiter, eps = 1e-6)
