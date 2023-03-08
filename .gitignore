@@ -1,0 +1,6 @@
+**/.DS_Store
+**/*.pyc
+useless/*
+**/results*/*
+**/*log
+**/check_points*/*
