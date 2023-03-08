@@ -89,21 +89,21 @@ def check_HJ_sol_usingEO_L1_1d_xdep(phi, dt, dx, f_in_H, c_in_H):
 def get_Gsq_from_rho(rho_plus_c_mul_cinH, a):
   '''
   @parameters:
-    rho_plus_c_mul_cinH: [nt-1, nx, 5]
+    rho_plus_c_mul_cinH: [5, nt-1, nx]
     a: [nt-1, nx]
   @return 
-    fn_val: [nt-1, nx, 5]
+    fn_val: [5, nt-1, nx]
   '''
-  n_can = jnp.shape(rho_plus_c_mul_cinH)[-1]
+  n_can = jnp.shape(rho_plus_c_mul_cinH)[0]
   a_left = jnp.roll(a, 1, axis = 1)
-  a_rep = einshape("ij->ijk", a, k=n_can)
-  a_left_rep = einshape("ij->ijk", a_left, k=n_can)
+  a_rep = einshape("ij->kij", a, k=n_can)
+  a_left_rep = einshape("ij->kij", a_left, k=n_can)
   G1 = jnp.minimum(rho_plus_c_mul_cinH + a_rep, 0) # when a < 0
   G2 = jnp.minimum(rho_plus_c_mul_cinH - a_left_rep, 0) # when a >=0
   G = jnp.zeros_like(rho_plus_c_mul_cinH)
   G = jnp.where(a_rep < 0, G1, G)
   G = jnp.where(a_left_rep >= 0, G + G2, G)
-  return G * G #[nt-1, nx, n_can]
+  return G * G #[n_can, nt-1, nx]
 
 
 def get_minimizer_ind(rho_candidates, shift_term, c, a, c_in_H):
@@ -111,7 +111,7 @@ def get_minimizer_ind(rho_candidates, shift_term, c, a, c_in_H):
   A2_mul_phi is of size ((nt-1)*nx, 1)
   for each (k,i) index, find min_r (r - shift_term)^2 + G(rho)_{k,i}^2 in candidates
   @ parameters:
-    rho_candidates: [nt-1, nx, 5]
+    rho_candidates: [5, nt-1, nx]
     shift_term: [nt-1, nx]
     c: scalar
     a: [nt-1, nx]
@@ -119,11 +119,11 @@ def get_minimizer_ind(rho_candidates, shift_term, c, a, c_in_H):
   @ return: 
     rho_min: [nt-1, nx]
   '''
-  fn_val = (rho_candidates - shift_term[:,:,None])**2 # [nt-1, nx, 5]
-  fn_val_p = fn_val + get_Gsq_from_rho((rho_candidates + c) * c_in_H[:,:,None], a)
-  minindex = jnp.argmin(fn_val_p, axis=-1, keepdims=True)
-  rho_min = jnp.take_along_axis(rho_candidates, minindex, axis = -1)
-  return rho_min[:,:,0]
+  fn_val = (rho_candidates - shift_term[None,:,:])**2 # [5, nt-1, nx]
+  fn_val_p = fn_val + get_Gsq_from_rho((rho_candidates + c) * c_in_H[None,:,:], a)
+  minindex = jnp.argmin(fn_val_p, axis=0, keepdims=True)
+  rho_min = jnp.take_along_axis(rho_candidates, minindex, axis = 0)
+  return rho_min[0,:,:]
 
 
 def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
@@ -189,6 +189,7 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
     rho_candidates.append(jnp.maximum((vec2 + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
     rho_candidates.append(jnp.maximum((vec2 + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
     
+    rho_candidates = jnp.array(rho_candidates) # [5, nt-1, nx]
     rho_next = get_minimizer_ind(rho_candidates, vec2, c_on_rho, vec1, c_in_H)
     # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
     m_next = jnp.minimum(jnp.maximum(vec1, -(rho_next + c_on_rho) * c_in_H), 
