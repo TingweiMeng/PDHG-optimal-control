@@ -3,8 +3,11 @@ import jax.numpy as jnp
 from functools import partial
 import utils
 from einshape import jax_einshape as einshape
-jax.config.update("jax_enable_x64", True)
+import os
+import solver
 
+jax.config.update("jax_enable_x64", True)
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
 @jax.jit
 def A1Mult(phi, dt, dx):
@@ -143,8 +146,9 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
   dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-1,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
   du = jnp.pad(1/(dt*dt)*jnp.ones((nt-1,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
   thomas_b = einshape('n->mn', fv - 2/(dt*dt), m = nt) #[nt, nx]
-  phi_fouir_part = jnp.concatenate([jax.lax.linalg.tridiagonal_solve(dl, thomas_b[:,i], du, v_Fourier[:,i:i+1]) for i in range(nx)], axis = 1) #[nt, nx]
-  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1) #[nt, nx]
+  
+  phi_fouir_part = solver.tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) #[nt, nx]
+  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real #[nt, nx]
   phi_next = phi_prev + F_phi_updates
   return phi_next
 
@@ -297,23 +301,35 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
 
 
 if __name__ == "__main__":
-  nt = 200
-  nx = 100
-  key = jax.random.PRNGKey(0)
-  f_in_H = jax.random.uniform(jax.random.PRNGKey(1), shape = [1, nx]) 
-  c_in_H = jax.random.uniform(jax.random.PRNGKey(2), shape = [1, nx]) 
-  phi0 = jax.random.uniform(jax.random.PRNGKey(3), shape = [nt, nx]) 
-  rho0 = jax.random.uniform(jax.random.PRNGKey(4), shape = [nt-1, nx]) 
-  m0 = jax.random.uniform(jax.random.PRNGKey(5), shape = [nt-1, nx]) 
-  mu0 = jax.random.uniform(jax.random.PRNGKey(6), shape = [1, nx]) 
-  stepsz_param = 1
-  g = jax.random.uniform(jax.random.PRNGKey(7), shape = [1, nx]) 
-  dx = 0.001
-  dt = 0.0001
-  c_on_rho = 1
-  if_precondition = True
+  if_precondition = False
+  nx = 200
+  nt = 101
   N_maxiter = 1000
   eps = 1e-6
-  pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
-                                          g, dx, dt, c_on_rho, if_precondition, 
-                                          N_maxiter = N_maxiter, eps = 1e-6)
+  T = 1
+  x_period = 2
+  stepsz_param = 0.9
+  c_on_rho = 10.0
+  alpha = 2 * jnp.pi / x_period
+  J = lambda x: jnp.sin(alpha * x)
+  f_in_H_fn = lambda x: 0*x
+  c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * (x-1) * (x-1))
+
+  dx = x_period / (nx)
+  dt = T / (nt-1)
+  x_arr = jnp.linspace(0.0, x_period, num = nx)[None,:]  # [1, nx]
+  
+  g = J(x_arr)  # [1, nx]
+  f_in_H = f_in_H_fn(x_arr)  # [1, nx]
+  c_in_H = c_in_H_fn(x_arr)  # [1, nx]
+    
+  phi0 = einshape("ij->(ki)j", g, k=nt)  # repeat each row of g to nt times, [nt, nx]
+  
+  rho0 = jnp.zeros([nt-1, nx])
+  m0 = jnp.zeros([nt-1, nx])
+  mu0 = jnp.zeros([1, nx])
+
+  phi_output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+                                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, eps = eps)
+
+  # HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_output, dt, dx, if_fwd, f_in_H, c_in_H)
