@@ -240,7 +240,7 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
 @utils.timeit
 def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, 
-                                          N_maxiter = 1000000, eps = 1e-6):
+                                          N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
   '''
   @ parameters:
     f_in_H: [1, nx]
@@ -293,7 +293,7 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     error_all.append(error)
     if error[0] < eps and error[1] < eps:
       break
-    if i % 1000 == 0:
+    if i % print_freq == 0:
       print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
    
     rho_prev = rho_next
@@ -305,34 +305,38 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
 
 
 if __name__ == "__main__":
-  if_precondition = True
-  nx = 200
-  nt = 101
-  N_maxiter = 10001
-  eps = 1e-6
-  T = 1
-  x_period = 2
-  stepsz_param = 0.9
-  c_on_rho = 10.0
-  alpha = 2 * jnp.pi / x_period
-  J = lambda x: jnp.sin(alpha * x)
-  f_in_H_fn = lambda x: 0*x
-  c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * (x-1) * (x-1))
 
-  dx = x_period / (nx)
-  dt = T / (nt-1)
-  x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:]  # [1, nx]
-  g = J(x_arr)  # [1, nx]
-  f_in_H = f_in_H_fn(x_arr)  # [1, nx]
-  c_in_H = c_in_H_fn(x_arr)  # [1, nx]
+  for nt, nx in [(200, 101), (200, 201), (400,201), (400, 401), (800,401), (800,801), (1600,801), (1600,1601)]:
+    if_precondition = True
+    N_maxiter = 2001
+    eps = 1e-6
+    T = 1
+    x_period = 2
+    stepsz_param = 0.9
+    c_on_rho = 10.0
+    alpha = 2 * jnp.pi / x_period
+    J = lambda x: jnp.sin(alpha * x)
+    f_in_H_fn = lambda x: 0*x
+    c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * (x-1) * (x-1))
+
+    dx = x_period / (nx)
+    dt = T / (nt-1)
+    x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:]  # [1, nx]
+    g = J(x_arr)  # [1, nx]
+    f_in_H = f_in_H_fn(x_arr)  # [1, nx]
+    c_in_H = c_in_H_fn(x_arr)  # [1, nx]
+      
+    phi0 = einshape("ij->(ki)j", g, k=nt)  # repeat each row of g to nt times, [nt, nx]
     
-  phi0 = einshape("ij->(ki)j", g, k=nt)  # repeat each row of g to nt times, [nt, nx]
-  
-  rho0 = jnp.zeros([nt-1, nx])
-  m0 = jnp.zeros([nt-1, nx])
-  mu0 = jnp.zeros([1, nx])
+    rho0 = jnp.zeros([nt-1, nx])
+    m0 = jnp.zeros([nt-1, nx])
+    mu0 = jnp.zeros([1, nx])
 
-  phi_output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
-                                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, eps = eps)
+    print("nt = {}, nx = {}".format(nt, nx))
+    print("warm up run, 1000 steps:", flush = True) # for each (nt, nx), the first few iterations would be slower due to jit compiling
+    phi_output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+                                            g, dx, dt, c_on_rho, if_precondition, N_maxiter = 1000, print_freq = 10000, eps = eps)
+    print("real run, {} steps:".format(N_maxiter), flush = True)
+    phi_output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+                                            g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = N_maxiter//5, eps = eps)
 
-  # HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_output, dt, dx, if_fwd, f_in_H, c_in_H)
