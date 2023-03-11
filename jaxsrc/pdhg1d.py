@@ -152,6 +152,7 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
   phi_next = phi_prev + F_phi_updates
   return phi_next
 
+get_stat = lambda x: jnp.sum(jnp.abs(x))
 
 @partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
@@ -230,6 +231,9 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
   HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H);
   err3 = jnp.mean(jnp.abs(HJ_residual))
   
+  # jax.debug.print("next {y}, {m}, {n}, {l}", y= get_stat(rho_next), 
+  #                 m = get_stat(phi_next), n = get_stat(m_next), 
+  #                 l = get_stat(mu_next))
   return rho_next, phi_next, m_next, mu_next, jnp.array([err1, err2,err3])
 
 
@@ -289,7 +293,7 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     error_all.append(error)
     if error[0] < eps and error[1] < eps:
       break
-    if i % 100 == 0:
+    if i % 1000 == 0:
       print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]));
    
     rho_prev = rho_next
@@ -301,10 +305,10 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
 
 
 if __name__ == "__main__":
-  if_precondition = False
+  if_precondition = True
   nx = 200
   nt = 101
-  N_maxiter = 1000
+  N_maxiter = 10001
   eps = 1e-6
   T = 1
   x_period = 2
@@ -317,8 +321,7 @@ if __name__ == "__main__":
 
   dx = x_period / (nx)
   dt = T / (nt-1)
-  x_arr = jnp.linspace(0.0, x_period, num = nx)[None,:]  # [1, nx]
-  
+  x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:]  # [1, nx]
   g = J(x_arr)  # [1, nx]
   f_in_H = f_in_H_fn(x_arr)  # [1, nx]
   c_in_H = c_in_H_fn(x_arr)  # [1, nx]
