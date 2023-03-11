@@ -294,7 +294,7 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     if error[0] < eps and error[1] < eps:
       break
     if i % 1000 == 0:
-      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]));
+      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
    
     rho_prev = rho_next
     phi_prev = phi_next
