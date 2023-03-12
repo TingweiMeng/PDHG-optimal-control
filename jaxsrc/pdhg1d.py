@@ -286,6 +286,8 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     fv = None
 
   error_all = []
+
+  results_all = []
   for i in range(N_maxiter):
     rho_next, phi_next, m_next, mu_next, error = pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
                                                                            g, dx, dt, c_on_rho, if_precondition, fv)
@@ -293,13 +295,16 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     if error[0] < eps and error[1] < eps:
       break
     if print_freq > 0 and i % print_freq == 0:
+      results_all.append((i, m_prev, rho_prev, mu_prev, phi_prev))
       print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
    
     rho_prev = rho_next
     phi_prev = phi_next
     m_prev = m_next
     mu_prev = mu_next
-  return rho_next, jnp.array(error_all)
+  
+  results_all.append((i+1, m_next, rho_next, mu_next, phi_next))
+  return results_all, jnp.array(error_all)
 
 
 
@@ -332,7 +337,7 @@ if __name__ == "__main__":
   mu0 = jnp.zeros([1, nx])
 
   #utils.timeit(pdhg_onedim_periodic_rho_m_EO_L1_xdep)(...) to get time
-  phi_output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+  output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = N_maxiter//5, eps = eps)
 
   # iteration 0, primal error with prev step 0.0, dual error with prev step 2.1361549842616188, eqt error 4.790281222746855
