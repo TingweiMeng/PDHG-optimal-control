@@ -5,6 +5,7 @@ import utils
 from pdhg1d import pdhg_onedim_periodic_rho_m_EO_L1_xdep
 import numpy as np
 from absl import app, flags, logging
+import pickle
 
 
 def main(argv):
@@ -43,7 +44,9 @@ def main(argv):
   results, errors = utils.timeit(pdhg_onedim_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps)
 
-  np.savez('results_nt{}_nx{}.npz'.format(nt, nx), results = results, errors = errors)
+  with open('results_nt{}_nx{}.pickle'.format(nt, nx), 'wb') as file:
+    pickle.dump((results, errors), file)
+    print('saved to {}'.format(file), flush = True)
   
 
 if __name__ == '__main__':
