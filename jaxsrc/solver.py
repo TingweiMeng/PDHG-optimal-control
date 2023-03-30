@@ -35,6 +35,8 @@ def tridiagonal_solve(dl, d, du, b):
 
 # batch in axis 1
 tridiagonal_solve_batch = jax.vmap(tridiagonal_solve, in_axes=(None, 1, None, 1), out_axes=1)
+tridiagonal_solve_batch_2d = jax.vmap(jax.vmap(tridiagonal_solve, in_axes=(None, -1, None, -1), out_axes=(-1)), 
+                            in_axes=(None, -1, None, -1), out_axes=(-1))
 
 if __name__ == "__main__":
 

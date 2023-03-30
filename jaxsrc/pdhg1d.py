@@ -91,27 +91,27 @@ def check_HJ_sol_usingEO_L1_1d_xdep(phi, dt, dx, f_in_H, c_in_H):
   return HJ_residual
 
 
-def get_Gsq_from_rho(rho_plus_c_mul_cinH, a):
+def get_Gsq_from_rho(rho_plus_c_mul_cinH, z):
   '''
   @parameters:
     rho_plus_c_mul_cinH: [5, nt-1, nx]
-    a: [nt-1, nx]
+    z: [nt-1, nx]
   @return 
     fn_val: [5, nt-1, nx]
   '''
   n_can = jnp.shape(rho_plus_c_mul_cinH)[0]
-  a_left = jnp.roll(a, 1, axis = 1)
-  a_rep = einshape("ij->kij", a, k=n_can)
-  a_left_rep = einshape("ij->kij", a_left, k=n_can)
-  G1 = jnp.minimum(rho_plus_c_mul_cinH + a_rep, 0) # when a < 0
-  G2 = jnp.minimum(rho_plus_c_mul_cinH - a_left_rep, 0) # when a >=0
+  z_left = jnp.roll(z, 1, axis = 1)
+  z_rep = einshape("ij->kij", z, k=n_can)
+  z_left_rep = einshape("ij->kij", z_left, k=n_can)
+  G1 = jnp.minimum(rho_plus_c_mul_cinH + z_rep, 0) # when z < 0
+  G2 = jnp.minimum(rho_plus_c_mul_cinH - z_left_rep, 0) # when z_left >=0
   G = jnp.zeros_like(rho_plus_c_mul_cinH)
-  G = jnp.where(a_rep < 0, G1, G)
-  G = jnp.where(a_left_rep >= 0, G + G2, G)
-  return G * G #[n_can, nt-1, nx]
+  G = jnp.where(z_rep < 0, G + G1 ** 2, G)
+  G = jnp.where(z_left_rep >= 0, G + G2 ** 2, G)
+  return G # [n_can, nt-1, nx]
 
 
-def get_minimizer_ind(rho_candidates, shift_term, c, a, c_in_H):
+def get_minimizer_ind(rho_candidates, shift_term, c, z, c_in_H):
   '''
   A2_mul_phi is of size ((nt-1)*nx, 1)
   for each (k,i) index, find min_r (r - shift_term)^2 + G(rho)_{k,i}^2 in candidates
@@ -119,13 +119,13 @@ def get_minimizer_ind(rho_candidates, shift_term, c, a, c_in_H):
     rho_candidates: [5, nt-1, nx]
     shift_term: [nt-1, nx]
     c: scalar
-    a: [nt-1, nx]
+    z: [nt-1, nx]
     c_in_H: [1, nx]
   @ return: 
     rho_min: [nt-1, nx]
   '''
   fn_val = (rho_candidates - shift_term[None,:,:])**2 # [5, nt-1, nx]
-  fn_val_p = fn_val + get_Gsq_from_rho((rho_candidates + c) * c_in_H[None,:,:], a)
+  fn_val_p = fn_val + get_Gsq_from_rho((rho_candidates + c) * c_in_H[None,:,:], z)
   minindex = jnp.argmin(fn_val_p, axis=0, keepdims=True)
   rho_min = jnp.take_along_axis(rho_candidates, minindex, axis = 0)
   return rho_min[0,:,:]
@@ -142,20 +142,18 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
     phi_next: [nt, nx]
   '''
   nt, nx = jnp.shape(delta_phi)
-  v_Fourier =  jnp.fft.fft(delta_phi, axis = 1) #[nt, nx]
+  v_Fourier =  jnp.fft.fft(delta_phi, axis = 1)  # [nt, nx]
   dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-1,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
   du = jnp.pad(1/(dt*dt)*jnp.ones((nt-1,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  thomas_b = einshape('n->mn', fv - 2/(dt*dt), m = nt) #[nt, nx]
+  thomas_b = einshape('n->mn', fv - 2/(dt*dt), m = nt)  # [nt, nx]
   
   phi_fouir_part = solver.tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) #[nt, nx]
   F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real #[nt, nx]
   phi_next = phi_prev + F_phi_updates
   return phi_next
 
-get_stat = lambda x: jnp.sum(jnp.abs(x))
-
 @partial(jax.jit, static_argnames=("if_precondition",))
-def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
+def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
                               g, dx, dt, c_on_rho, if_precondition, fv):
   '''
   @ parameters
@@ -170,11 +168,9 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
     g: [1, nx]
     dx: scalar
     dt: scalar
-    c_on_rho: scaler
+    c_on_rho: scalar
     if_precondition: bool
     fv: [nx]
-    
-    Aprecond_func: function = lambda x: Aprecondition @ x
 
   @ return 
     rho_next: [nt-1, nx]
@@ -185,10 +181,14 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
   '''
 
   delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev)) #[nt, nx]
-  delta_phi = jnp.concatenate([delta_phi_raw[0:1,:] + tau* mu_prev, delta_phi_raw[1:,:]], axis = 0) #[nt, nx]
+  # old version
+  #delta_phi = jnp.concatenate([delta_phi_raw[0:1,:] + tau* mu_prev, delta_phi_raw[1:,:]], axis = 0) #[nt, nx]
+  # new version:
+  delta_phi_before_scaling = jnp.concatenate([delta_phi_raw[0:1,:] + tau* mu_prev, delta_phi_raw[1:,:]], axis = 0) # [nt, nx]
+  delta_phi = delta_phi_before_scaling / dt
 
   if if_precondition:
-    phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt);
+    phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt)
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
@@ -201,23 +201,25 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
   mu_next = mu_prev + sigma * (phi_bar[0:1,:] - g)
 
   rho_candidates = []
-  vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
-  vec1_left = jnp.roll(vec1, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
-  vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
-  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
+  # the previous version: vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
+  z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
+  z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
+  # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
+  alp = rho_prev - sigma * A2Mult(phi_bar) / dt + sigma * f_in_H # [nt-1, nx]
 
+  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
   # two possible quadratic terms on G, 4 combinations
-  vec3 = -c_in_H * c_in_H * c_on_rho - vec1 * c_in_H
-  vec4 = -c_in_H * c_in_H * c_on_rho + vec1_left * c_in_H
-  rho_candidates.append(jnp.maximum(vec2, - c_on_rho))  # for rho large, G = 0
-  rho_candidates.append(jnp.maximum((vec2 + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
-  rho_candidates.append(jnp.maximum((vec2 + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
-  rho_candidates.append(jnp.maximum((vec2 + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
+  vec3 = -c_in_H * c_in_H * c_on_rho - z * c_in_H
+  vec4 = -c_in_H * c_in_H * c_on_rho + z_left * c_in_H
+  rho_candidates.append(jnp.maximum(alp, - c_on_rho))  # for rho large, G = 0
+  rho_candidates.append(jnp.maximum((alp + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
+  rho_candidates.append(jnp.maximum((alp + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
+  rho_candidates.append(jnp.maximum((alp + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
   
   rho_candidates = jnp.array(rho_candidates) # [5, nt-1, nx]
-  rho_next = get_minimizer_ind(rho_candidates, vec2, c_on_rho, vec1, c_in_H)
+  rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z, c_in_H)
   # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
-  m_next = jnp.minimum(jnp.maximum(vec1, -(rho_next + c_on_rho) * c_in_H), 
+  m_next = jnp.minimum(jnp.maximum(z, -(rho_next + c_on_rho) * c_in_H), 
                         (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
 
   # primal error
@@ -228,16 +230,12 @@ def pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_p
   err2_mu = jnp.linalg.norm(mu_next - mu_prev)
   err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m + err2_mu*err2_mu)
   # err3: equation error
-  HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H);
+  HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H)
   err3 = jnp.mean(jnp.abs(HJ_residual))
-  
-  # jax.debug.print("next {y}, {m}, {n}, {l}", y= get_stat(rho_next), 
-  #                 m = get_stat(phi_next), n = get_stat(m_next), 
-  #                 l = get_stat(mu_next))
   return rho_next, phi_next, m_next, mu_next, jnp.array([err1, err2,err3])
 
 
-def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, 
                                           N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
   '''
@@ -252,13 +250,13 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     g: [1, nx]
     dx: scalar
     dt: scalar
-    c_on_rho: scaler
+    c_on_rho: scalar
     if_precondition: bool
     N_maxiter: int
     eps: scalar
 
   @ return 
-    phi: [nt, nx]
+    results_all: list of (iter_no, m, rho, mu, phi)
     error_all: [#pdhg iter, 3]
   '''
   nt,nx = jnp.shape(phi0)
@@ -281,7 +279,7 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
   if if_precondition:
     # fft for preconditioning
     Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
-    fv = jnp.fft.fft(Lap_vec); #[nx]
+    fv = jnp.fft.fft(Lap_vec)  # [nx]
   else:
     fv = None
 
@@ -289,7 +287,7 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
 
   results_all = []
   for i in range(N_maxiter):
-    rho_next, phi_next, m_next, mu_next, error = pdhg_onedim_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
+    rho_next, phi_next, m_next, mu_next, error = pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
                                                                            g, dx, dt, c_on_rho, if_precondition, fv)
     error_all.append(error)
     if error[0] < eps and error[1] < eps:
@@ -303,6 +301,8 @@ def pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, s
     m_prev = m_next
     mu_prev = mu_next
   
+  # print the final error
+  print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
   results_all.append((i+1, m_next, rho_next, mu_next, phi_next))
   return results_all, jnp.array(error_all)
 
@@ -336,13 +336,6 @@ if __name__ == "__main__":
   m0 = jnp.zeros([nt-1, nx])
   mu0 = jnp.zeros([1, nx])
 
-  #utils.timeit(pdhg_onedim_periodic_rho_m_EO_L1_xdep)(...) to get time
-  output, error_all = pdhg_onedim_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+  #utils.timeit(pdhg_1d_periodic_rho_m_EO_L1_xdep)(...) to get time
+  output, error_all = pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = N_maxiter//5, eps = eps)
-
-  # iteration 0, primal error with prev step 0.0, dual error with prev step 2.1361549842616188, eqt error 4.790281222746855
-  # iteration 400, primal error with prev step 0.20220652147305648, dual error with prev step 1.6410945674460602, eqt error 2.502589916793291
-  # iteration 800, primal error with prev step 0.06831688412331721, dual error with prev step 1.5780906564243886, eqt error 2.0334908931956353
-  # iteration 1200, primal error with prev step 0.11312863344242437, dual error with prev step 1.3012967388228125, eqt error 3.0772971015694264
-  # iteration 1600, primal error with prev step 0.13333274128396508, dual error with prev step 1.1886147450803772, eqt error 2.796169857846648
-  # iteration 2000, primal error with prev step 0.0751826853549036, dual error with prev step 1.359449566705966, eqt error 2.0459435047193817
