@@ -183,7 +183,7 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
   phi_next = phi_prev + F_phi_updates
   return phi_next
 
-@partial(jax.jit, static_argnames=("if_precondition",))
+# @partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev, mu_prev, phi_prev,
                               g, dx, dy, dt, c_on_rho, if_precondition, fv, mask_candidates):
   '''
@@ -212,20 +212,30 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
     err: jnp.array([err1, err2,err3])
   '''
 
+  print("tau {}, sigma {}".format(tau, sigma))
+
   delta_phi_raw = - tau * (A1TransMult_x(m1_prev, dt, dx) + A1TransMult_y(m2_prev, dt, dy) + A2TransMult(rho_prev)) #[nt, nx, ny]
   delta_phi_before_scaling = jnp.concatenate([delta_phi_raw[0:1,:,:] + tau* mu_prev, delta_phi_raw[1:,:,:]], axis = 0) # [nt, nx, ny]
   delta_phi = delta_phi_before_scaling / dt
+
+  print("delta phi {}".format(delta_phi))
 
   if if_precondition:
     phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt)
   else: # no preconditioning
     phi_next = phi_prev - delta_phi
 
+  print("phi next {}".format(phi_next))
+
   # extrapolation
   phi_bar = 2 * phi_next - phi_prev
+
+  print("phi bar {}".format(phi_bar))
   
   # update mu
   mu_next = mu_prev + sigma * (phi_bar[0:1,:,:] - g)  # [1, nx, ny]
+
+  print("mu next {}".format(mu_next))
 
   rho_candidates = []
   z1 = m1_prev - sigma * A1Mult_x(phi_bar, dt, dx) / dt  # [nt-1, nx, ny]
@@ -233,6 +243,10 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
   z1_left = jnp.roll(z1, 1, axis = 1)
   z2_left = jnp.roll(z2, 1, axis = 2)
   alp = rho_prev - sigma * A2Mult(phi_bar) / dt + sigma * f_in_H # [nt-1, nx, ny]
+
+  print("z1 {}".format(z1))
+  print("z2 {}".format(z2))
+  print("alp {}".format(alp))
 
   rho_candidates_1 = -c_on_rho * jnp.ones_like(rho_prev)[None,...]  # left bound, [1,nt-1, nx,ny]
   # 16 candidates using mask
@@ -244,13 +258,20 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
               sum_vec_in_C) / (1 + num_vec_in_C * c_in_H[None,...]**2)
   rho_candidates = jnp.concatenate([rho_candidates_1, rho_candidates_16], axis = 0) # [17, nt-1, nx, ny]  (16 candidates and lower bound)
 
+  print("rho candidates {}".format(rho_candidates))
+
   rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z1, z2, c_in_H)
+
+  print("rho next {}".format(rho_next))
 
   m1_next = jnp.minimum(jnp.maximum(z1, -(rho_next + c_on_rho) * c_in_H), 
                         (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
   # m2 is truncation of z2 into [-(rho_{i,j}+c)c(xi,yj), (rho_{i,j+1}+c)c(xi, y_{j+1})]
   m2_next = jnp.minimum(jnp.maximum(z2, -(rho_next + c_on_rho) * c_in_H), 
                         (jnp.roll(rho_next, -1, axis = 2) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 2))
+  print("m1 next lb {}".format((jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1)))
+  print("m1 next {}".format(m1_next))
+  print("m2 next {}".format(m2_next))
   # primal error
   err1 = jnp.linalg.norm(phi_next - phi_prev)
   # err2: dual error
@@ -326,7 +347,10 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
     rho_next, phi_next, m1_next, m2_next, mu_next, error = pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, 
               m1_prev, m2_prev, rho_prev, mu_prev, phi_prev, g, dx, dy, dt, c_on_rho, if_precondition, fv, mask)
     error_all.append(error)
-    if error[0] < eps and error[1] < eps:
+    if error[2] < eps:
+      break
+    if jnp.isnan(error[0]) or jnp.isnan(error[1]):
+      print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, m1_prev, m2_prev, rho_prev, mu_prev, phi_prev))
@@ -345,11 +369,11 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
 
 
 if __name__ == "__main__":
-  nt = 21
-  nx = 40
-  ny = 40
-  if_precondition = True
-  N_maxiter = 2000001
+  nt = 3
+  nx = 4
+  ny = 3
+  if_precondition = False # True
+  N_maxiter = 2 # 2000001
   eps = 1e-6
   T = 1
   x_period = 2
@@ -365,6 +389,8 @@ if __name__ == "__main__":
   dx = x_period / (nx)
   dy = y_period / (ny)
   dt = T / (nt-1)
+
+  print("nt {}, nx {}, ny {}, dt {}, dx {}, dy {}".format(nt, nx, ny, dt, dx, dy))
   
   x_arr = jnp.linspace(0.0, x_period - dx, num = nx)  # [nx]
   y_arr = jnp.linspace(0.0, y_period - dy, num = ny)  # [ny]
@@ -381,6 +407,33 @@ if __name__ == "__main__":
   m0_2 = jnp.zeros([nt-1, nx, ny])
   mu0 = jnp.zeros([1, nx, ny])
 
-  #utils.timeit(pdhg_2d_periodic_rho_m_EO_L1_xdep)(...) to get time
+  # FOR DEBUG!
+  key = jax.random.PRNGKey(1)
+  key, subkey = jax.random.split(key)
+  phi0 = jax.random.normal(subkey, [nt, nx, ny])
+  key, subkey = jax.random.split(key)
+  g = jax.random.normal(subkey, [1, nx, ny])
+  key, subkey = jax.random.split(key)
+  f_in_H = jax.random.normal(subkey, [1, nx, ny])
+  key, subkey = jax.random.split(key)
+  c_in_H = jnp.abs(jax.random.normal(subkey, [1, nx, ny]))
+  key, subkey = jax.random.split(key)
+  rho0 = jax.random.normal(subkey, [nt-1, nx, ny])
+  key, subkey = jax.random.split(key)
+  m0_1 = jax.random.normal(subkey, [nt-1, nx, ny])
+  key, subkey = jax.random.split(key)
+  m0_2 = jax.random.normal(subkey, [nt-1, nx, ny])
+  key, subkey = jax.random.split(key)
+  mu0 = jax.random.normal(subkey, [1, nx, ny])
+
+  print("g {}".format(g))
+  print("f {}".format(f_in_H))
+  print("c {}".format(c_in_H))
+  print("phi0 {}".format(phi0))
+  print("rho0 {}".format(rho0))
+  print("m0 1 {}".format(m0_1))
+  print("m0 2 {}".format(m0_2))
+  print("mu0 {}".format(mu0))
+
   output, error_all = utils.timeit(pdhg_2d_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu0, stepsz_param, 
                     g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = N_maxiter//100, eps = eps)
