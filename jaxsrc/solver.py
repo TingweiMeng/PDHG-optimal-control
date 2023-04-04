@@ -38,8 +38,84 @@ tridiagonal_solve_batch = jax.vmap(tridiagonal_solve, in_axes=(None, 1, None, 1)
 tridiagonal_solve_batch_2d = jax.vmap(jax.vmap(tridiagonal_solve, in_axes=(None, -1, None, -1), out_axes=(-1)), 
                             in_axes=(None, -1, None, -1), out_axes=(-1))
 
-if __name__ == "__main__":
+def interpolation_t(fn_left, fn_right, scaling_num):
+  '''
+  Note: the interpolated matrix does not include the last element of fn_right
+  @ parameters:
+    fn_left, fn_right: [n, ...]
+    scaling_num: int
+  @ return:
+    fn_dense: [n * scaling_num, ...]
+  '''
+  fn_dense = einshape('k...->(kj)...', fn_left, j = scaling_num)
+  incremental = (fn_right - fn_left) / scaling_num
+  for i in range(scaling_num):
+    fn_dense = fn_dense.at[i::scaling_num, ...].set(fn_left + i * incremental)
+    # fn_dense[i::scaling_num, ...] = fn_left + i * incremental
+  return fn_dense
 
+def interpolation_x(fn_left, fn_right, scaling_num):
+  '''
+  Note: the interpolated matrix does not include the last element of fn_right
+  @ parameters:
+    fn_left, fn_right: [nt, n, ...]
+    scaling_num: int
+  @ return:
+    fn_dense: [nt, n * scaling_num, ...]
+  '''
+  fn_dense = einshape('ik->i(jk)', fn_left, j = scaling_num)
+  incremental = (fn_right - fn_left) / scaling_num
+  for i in range(scaling_num):
+    fn_dense = fn_dense.at[:, i::scaling_num, ...].set(fn_left + i * incremental)
+    # fn_dense[:, i::scaling_num, ...] = fn_left + i * incremental
+  return fn_dense
+
+def interpolation_y(fn_left, fn_right, scaling_num):
+  '''
+  Note: the interpolated matrix does not include the last element of fn_right
+        this function is only used for 2d cases
+  @ parameters:
+    fn_left, fn_right: [nt, nx, n]
+    scaling_num: int
+  @ return:
+    fn_dense: [nt, nx, n * scaling_num]
+  '''
+  fn_dense = einshape('ilk->il(kj)', fn_left, j = scaling_num)
+  incremental = (fn_right - fn_left) / scaling_num
+  for i in range(scaling_num):
+    fn_dense = fn_dense.at[..., i::scaling_num].set(fn_left + i * incremental)
+    # fn_dense[..., i::scaling_num] = fn_left + i * incremental
+  return fn_dense
+
+def set_up_example(egno, ndim, nt, nx, ny, x_period, y_period):
+  '''
+  @ parameters:
+    egno, ndim, nt, nx, ny: int
+    x_period, y_period: scalars
+  @ return:
+    J, f_in_H_fn, c_in_H_fn: functions
+    filename: string
+  '''
+  if ndim == 1:
+    alpha = 2 * jnp.pi / x_period
+    filename = './jaxsrc/eg{}_1d/nt{}_nx{}'.format(egno, nt, nx)
+  else:
+    alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
+    filename = './jaxsrc/eg{}_2d/nt{}_nx{}_ny{}'.format(egno, nt, nx, ny)
+  
+  J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
+
+  if egno == 1:
+    # example 1
+    f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
+  else:
+    # example 2
+    f_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
+    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+  return J, f_in_H_fn, c_in_H_fn, filename
+
+if __name__ == "__main__":
   n = 20
   dl = jnp.array([0.0] + [0.1] * (n-1)).astype(jnp.complex128)
   du = jnp.array([0.1] * (n-1) + [0.0]).astype(jnp.complex128)

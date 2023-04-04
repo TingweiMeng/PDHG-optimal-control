@@ -5,6 +5,8 @@ import utils
 from einshape import jax_einshape as einshape
 import os
 import solver
+from solver import interpolation_x, interpolation_t, interpolation_y
+import pickle
 
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -183,7 +185,7 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
   phi_next = phi_prev + F_phi_updates
   return phi_next
 
-# @partial(jax.jit, static_argnames=("if_precondition",))
+@partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev, mu_prev, phi_prev,
                               g, dx, dy, dt, c_on_rho, if_precondition, fv, mask_candidates):
   '''
@@ -211,31 +213,20 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
     mu_next: [1, nx, ny]
     err: jnp.array([err1, err2,err3])
   '''
-
-  print("tau {}, sigma {}".format(tau, sigma))
-
   delta_phi_raw = - tau * (A1TransMult_x(m1_prev, dt, dx) + A1TransMult_y(m2_prev, dt, dy) + A2TransMult(rho_prev)) #[nt, nx, ny]
   delta_phi_before_scaling = jnp.concatenate([delta_phi_raw[0:1,:,:] + tau* mu_prev, delta_phi_raw[1:,:,:]], axis = 0) # [nt, nx, ny]
   delta_phi = delta_phi_before_scaling / dt
-
-  print("delta phi {}".format(delta_phi))
 
   if if_precondition:
     phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt)
   else: # no preconditioning
     phi_next = phi_prev - delta_phi
 
-  print("phi next {}".format(phi_next))
-
   # extrapolation
   phi_bar = 2 * phi_next - phi_prev
 
-  print("phi bar {}".format(phi_bar))
-  
   # update mu
   mu_next = mu_prev + sigma * (phi_bar[0:1,:,:] - g)  # [1, nx, ny]
-
-  print("mu next {}".format(mu_next))
 
   rho_candidates = []
   z1 = m1_prev - sigma * A1Mult_x(phi_bar, dt, dx) / dt  # [nt-1, nx, ny]
@@ -244,34 +235,22 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
   z2_left = jnp.roll(z2, 1, axis = 2)
   alp = rho_prev - sigma * A2Mult(phi_bar) / dt + sigma * f_in_H # [nt-1, nx, ny]
 
-  print("z1 {}".format(z1))
-  print("z2 {}".format(z2))
-  print("alp {}".format(alp))
-
   rho_candidates_1 = -c_on_rho * jnp.ones_like(rho_prev)[None,...]  # left bound, [1,nt-1, nx,ny]
   # 16 candidates using mask
   num_vec_in_C = jnp.sum(mask_candidates, axis = -1)[:,None,None,None]   # [16, 1, 1,1]
   sum_vec_in_C = (-z1_left)[None,...] * mask_candidates[:,0,None,None,None] \
               + z1[None,...] * mask_candidates[:,1,None,None,None] + z2[None,...] * mask_candidates[:,2,None,None,None] \
               + (-z2_left)[None,...] * mask_candidates[:,3,None,None,None]  # [16, nt-1, nx, ny]
-  rho_candidates_16 = (alp[None,...] - num_vec_in_C * c_in_H[None,...] **2 * c_on_rho - c_in_H[None,...] *\
-              sum_vec_in_C) / (1 + num_vec_in_C * c_in_H[None,...]**2)
+  rho_candidates_16 = jnp.maximum((alp[None,...] - num_vec_in_C * c_in_H[None,...] **2 * c_on_rho - c_in_H[None,...] *\
+              sum_vec_in_C) / (1 + num_vec_in_C * c_in_H[None,...]**2), -c_on_rho)
   rho_candidates = jnp.concatenate([rho_candidates_1, rho_candidates_16], axis = 0) # [17, nt-1, nx, ny]  (16 candidates and lower bound)
-
-  print("rho candidates {}".format(rho_candidates))
-
   rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z1, z2, c_in_H)
-
-  print("rho next {}".format(rho_next))
 
   m1_next = jnp.minimum(jnp.maximum(z1, -(rho_next + c_on_rho) * c_in_H), 
                         (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
   # m2 is truncation of z2 into [-(rho_{i,j}+c)c(xi,yj), (rho_{i,j+1}+c)c(xi, y_{j+1})]
   m2_next = jnp.minimum(jnp.maximum(z2, -(rho_next + c_on_rho) * c_in_H), 
                         (jnp.roll(rho_next, -1, axis = 2) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 2))
-  print("m1 next lb {}".format((jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1)))
-  print("m1 next {}".format(m1_next))
-  print("m2 next {}".format(m2_next))
   # primal error
   err1 = jnp.linalg.norm(phi_next - phi_prev)
   # err2: dual error
@@ -320,7 +299,7 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
   if if_precondition:
     tau = stepsz_param
   else:
-    tau = stepsz_param / (2*dt/dx + 2*dt/dy + 3)
+    tau = stepsz_param / (3/dt + 2/dx + 2/dy)
 
   sigma = tau
   sigma_scale = 1.5
@@ -349,12 +328,13 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
     error_all.append(error)
     if error[2] < eps:
       break
-    if jnp.isnan(error[0]) or jnp.isnan(error[1]):
-      print("Nan error at iter {}".format(i))
+    if jnp.isnan(error[0]) or jnp.isnan(error[1]) or jnp.isinf(error[0]) or jnp.isinf(error[1]):
+      print("Nan or inf error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, m1_prev, m2_prev, rho_prev, mu_prev, phi_prev))
-      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
+      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}, min phi {}'.format(i, 
+              error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
    
     rho_prev = rho_next
     phi_prev = phi_next
@@ -363,9 +343,82 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
     mu_prev = mu_next
   
   # print the final error
-  print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
+  print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}, min phi {}'.format(i, 
+          error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
   results_all.append((i+1, m1_next, m2_next, rho_next, mu_next, phi_next))
   return results_all, jnp.array(error_all)
+
+def interpolation_xy(mat, scaling_num_x, scaling_num_y):
+  '''
+  @ parameters:
+    mat: [nx, ny]
+    scaling_num_x, scaling_num_y: integers
+  @ return:
+    mat_dense: [nx_dense, ny_dense]
+  '''
+  mat_x_right = jnp.concatenate([mat[:,1:,:], mat[:,0:1,:]], axis = 1)
+  mat_x_dense = interpolation_x(mat, mat_x_right, scaling_num_x)  # [..., nx_dense, ny]
+  mat_y_right = jnp.concatenate([mat_x_dense[:,:,1:], mat_x_dense[:,:,0:1]], axis = 2)
+  mat_y_dense = interpolation_y(mat_x_dense, mat_y_right, scaling_num_y)  # [..., nx_dense, ny_dense]
+  return mat_y_dense
+
+def interpolation_txy(mat, scaling_num_t, scaling_num_x, scaling_num_y, if_include_terminal = False):
+  '''
+  @ parameters:
+    mat: [nt, nx, ny] or [nt-1, nx, ny]
+    scaling_num_t, scaling_num_x, scaling_num_y: integers
+    if_include_terminal: bool (True for phi, False for rho, m1, m2)
+  @ return:
+    mat_dense: [nt_dense, nx_dense, ny_dense] or [nt_dense-1, nx_dense, ny_dense]
+  '''
+  mat_y_dense = interpolation_xy(mat, scaling_num_x, scaling_num_y)  # [..., nx_dense, ny_dense]
+  if if_include_terminal:
+    mat_t_left = mat_y_dense[:-1,:,:]
+    mat_t_right = mat_y_dense[1:,:,:]
+  else:
+    mat_t_left = mat_y_dense
+    mat_t_right = jnp.concatenate([mat_y_dense[1:,:,:], mat_y_dense[-1:,:,:]], axis = 0)
+  mat_t_dense = interpolation_t(mat_t_left, mat_t_right, scaling_num_t)  # [nt_dense-1, nx_dense, ny_dense]
+  if if_include_terminal:
+    mat_dense = jnp.concatenate([mat_t_dense, mat_y_dense[-1:,:,:]], axis = 0)
+  else:
+    mat_dense = mat_t_dense
+  return mat_dense
+
+def get_initialization_2d(filename, nt_coarse, nx_coarse, ny_coarse, nt_fine, nx_fine, ny_fine):
+  '''
+  @ parameters:
+    filename: string
+    nt_coarse, nx_coarse, ny_coarse, nt_fine, nx_fine, ny_fine: int
+  @ return:
+    phi0: [nt_fine, nx_fine, ny_fine]
+    rho0, m1_0, m2_0: [nt_fine-1, nx_fine, ny_fine]
+    mu0: [1, nx_fine, ny_fine]
+  '''
+  with open(filename, 'rb') as f:
+    results_np, _ = pickle.load(f)
+  results = jax.device_put(results_np)
+  phi_coarse = results[-1][-1]
+  mu_coarse = results[-1][-2]
+  rho_coarse = results[-1][-3]
+  m1_coarse = results[-1][0]
+  m2_coarse = results[-1][1]
+  # interpolation
+  scaling_num_x = jnp.floor(nx_fine / nx_coarse)
+  scaling_num_y = jnp.floor(ny_fine / ny_coarse)
+  scaling_num_t = jnp.floor((nt_fine-1) / (nt_coarse-1))
+  if scaling_num_x * nx_coarse != nx_fine:
+    raise ValueError("scaling_num_x should be an integer")
+  if scaling_num_y * ny_coarse != ny_fine:
+    raise ValueError("scaling_num_y should be an integer")
+  if scaling_num_t * (nt_coarse-1) != (nt_fine-1):
+    raise ValueError("scaling_num_t should be an integer")
+  phi0 = interpolation_txy(phi_coarse, scaling_num_t, scaling_num_x, scaling_num_y, if_include_terminal = True)
+  rho0 = interpolation_txy(rho_coarse, scaling_num_t, scaling_num_x, scaling_num_y, if_include_terminal = False)
+  m1_0 = interpolation_txy(m1_coarse, scaling_num_t, scaling_num_x, scaling_num_y, if_include_terminal = False)
+  m2_0 = interpolation_txy(m2_coarse, scaling_num_t, scaling_num_x, scaling_num_y, if_include_terminal = False)
+  mu0 = interpolation_xy(mu_coarse, scaling_num_x, scaling_num_y)
+  return phi0, rho0, m1_0, m2_0, mu0
 
 
 if __name__ == "__main__":

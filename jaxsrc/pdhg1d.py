@@ -1,10 +1,13 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 from functools import partial
 import utils
 from einshape import jax_einshape as einshape
 import os
 import solver
+from solver import interpolation_x, interpolation_t
+import pickle
 
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -268,7 +271,7 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
   if if_precondition:
     tau = stepsz_param
   else:
-    tau = stepsz_param / (2*dt/dx + 3)
+    tau = stepsz_param / (2/dx + 3/dt)
 
   sigma = tau
   sigma_scale = 1.5
@@ -290,11 +293,15 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
     rho_next, phi_next, m_next, mu_next, error = pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
                                                                            g, dx, dt, c_on_rho, if_precondition, fv)
     error_all.append(error)
-    if error[0] < eps and error[1] < eps:
+    if error[2] < eps:
+      break
+    if jnp.isnan(error[0]) or jnp.isnan(error[1]):
+      print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, m_prev, rho_prev, mu_prev, phi_prev))
-      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
+      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}, min rho {}'.format(i, 
+                  error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
    
     rho_prev = rho_next
     phi_prev = phi_next
@@ -306,7 +313,65 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
   results_all.append((i+1, m_next, rho_next, mu_next, phi_next))
   return results_all, jnp.array(error_all)
 
+def interpolation_tx(mat, scaling_num_t, scaling_num_x, if_include_terminal = False):
+  '''
+  @ parameters:
+    mat: [nt, nx] or [nt-1, nx]
+    scaling_num_t, scaling_num_x: integers
+    if_include_terminal: bool (True for phi, False for rho, m)
+  @ return:
+    mat_dense: [nt_dense, nx_dense] or [nt_dense-1, nx_dense]
+  '''
+  mat_x_right = jnp.concatenate([mat[:,1:], mat[:,0:1]], axis = 1)
+  mat_x_dense = interpolation_x(mat, mat_x_right, scaling_num_x)
+  if if_include_terminal:
+    mat_t_left = mat_x_dense[:-1,:]
+    mat_t_right = mat_x_dense[1:,:]
+  else:
+    mat_t_left = mat_x_dense
+    mat_t_right = jnp.concatenate([mat_x_dense[1:,:], mat_x_dense[-1:,:]], axis = 0)
+  mat_xt_dense = interpolation_t(mat_t_left, mat_t_right, scaling_num_t)
+  if if_include_terminal:
+    mat_dense = jnp.concatenate([mat_xt_dense, mat_x_dense[-1:,:]], axis = 0)
+  else:
+    mat_dense = mat_xt_dense
+  return mat_dense
 
+
+def get_initialization_1d(filename, nt_coarse, nx_coarse, nt_fine, nx_fine):
+  '''
+  @ parameters:
+    filename: string
+    nt_coarse, nx_coarse, nt_fine, nx_fine: int
+  @ return:
+    phi0: [nt_fine, nx_fine]
+    rho0: [nt_fine-1, nx_fine]
+    m0: [nt_fine-1, nx_fine]
+    mu0: [1, nx_fine]
+  '''
+  with open(filename, 'rb') as f:
+    results_np, _ = pickle.load(f)
+  results = jax.device_put(results_np)
+  phi_coarse = jax.device_put(results[-1][-1])
+  mu_coarse = results[-1][-2]
+  rho_coarse = results[-1][-3]
+  m_coarse = results[-1][-4]
+  # interpolation
+  scaling_num_x = int(jnp.floor(nx_fine / nx_coarse))
+  scaling_num_t = int(jnp.floor((nt_fine -1) / (nt_coarse -1)))
+  print("scaling_num_x = {}, scaling_num_t = {}".format(scaling_num_x, scaling_num_t))
+  if scaling_num_x * nx_coarse != nx_fine:
+    raise ValueError("scaling_num_x should be an integer")
+  if scaling_num_t * (nt_coarse -1) != (nt_fine -1):
+    raise ValueError("scaling_num_t should be an integer")
+  phi0 = interpolation_tx(phi_coarse, scaling_num_t, scaling_num_x, if_include_terminal = True)
+  rho0 = interpolation_tx(rho_coarse, scaling_num_t, scaling_num_x, if_include_terminal = False)
+  m0 = interpolation_tx(m_coarse, scaling_num_t, scaling_num_x, if_include_terminal = False)
+  mu_coarse_right = jnp.concatenate([mu_coarse[:,1:], mu_coarse[:,0:1]], axis = 1)
+  mu0 = interpolation_x(mu_coarse, mu_coarse_right, scaling_num_x)
+  return phi0, rho0, m0, mu0
+
+  
 
 if __name__ == "__main__":
   nt = 200
