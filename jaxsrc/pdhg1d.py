@@ -78,7 +78,7 @@ def A2TransMult(rho, epsl, dt, dx):
   return out
 
 
-def check_HJ_sol_usingEO_L1_1d_xdep(phi, dt, dx, f_in_H, c_in_H):
+def check_HJ_sol_usingEO_L1_1d_xdep(phi, dt, dx, f_in_H, c_in_H, epsl):
   '''
   check a solution is true or not
   H is L1, 1-dimensional
@@ -95,7 +95,8 @@ def check_HJ_sol_usingEO_L1_1d_xdep(phi, dt, dx, f_in_H, c_in_H):
   dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
   H_val = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
   H_val = c_in_H * H_val + f_in_H
-  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val[1:,:]
+  Lap = (dphidx_right - dphidx_left)/dx
+  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val[1:,:] - epsl * Lap[1:,:]
   return HJ_residual
 
 
@@ -239,7 +240,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev,
   err2_mu = jnp.linalg.norm(mu_next - mu_prev)
   err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m + err2_mu*err2_mu)
   # err3: equation error
-  HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H)
+  HJ_residual = check_HJ_sol_usingEO_L1_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H, epsl)
   err3 = jnp.mean(jnp.abs(HJ_residual))
   return rho_next, phi_next, m_next, mu_next, jnp.array([err1, err2,err3])
 
