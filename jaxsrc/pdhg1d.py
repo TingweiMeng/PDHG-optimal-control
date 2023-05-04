@@ -342,7 +342,7 @@ def get_initialization_1d(filename, nt_coarse, nx_coarse, nt_fine, nx_fine):
   with open(filename, 'rb') as f:
     results_np, _ = pickle.load(f)
   results = jax.device_put(results_np)
-  phi_coarse = jax.device_put(results[-1][-1])
+  phi_coarse = results[-1][-1]
   mu_coarse = results[-1][-2]
   rho_coarse = results[-1][-3]
   m_coarse = results[-1][-4]

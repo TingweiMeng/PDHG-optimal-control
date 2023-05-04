@@ -11,6 +11,7 @@ from solver import set_up_example
 import pytz
 from datetime import datetime
 import os
+import save_analysis
 
 
 def main(argv):
@@ -83,18 +84,13 @@ def main(argv):
   logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
   save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
 
-  if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
   if ndim == 1:
     filename = 'nt{}_nx{}'.format(nt, nx)
   elif ndim == 2:
     filename = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
-  sol_path = save_dir + '/{}.pickle'.format(filename)
   
   print("nt = {}, nx = {}, ny = {}".format(nt, nx, ny))
   print("shape g {}, f {}, c {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-  print("save dir {}".format(save_dir))
-  print("sol path {}".format(sol_path), flush=True)
 
   iter_no = 0
   for i in range(rept_num):
@@ -107,9 +103,8 @@ def main(argv):
                     g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps, epsl = epsl)
     iter_no += results[-1][0]
     if ifsave:
-      with open(sol_path + '_iter{}.pickle'.format(iter_no), 'wb') as file:
-        pickle.dump((results, errors), file)
-        print('saved to {}'.format(file), flush = True)
+      filename = filename + '_iter{}'.format(iter_no)
+      save_analysis.save(save_dir, filename, (results, errors))
     if results[-1][0] < N_maxiter:
       break
     if ndim == 1:
