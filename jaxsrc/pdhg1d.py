@@ -44,8 +44,8 @@ def A1TransMult(m, dt, dx):
   return out
 
 @jax.jit
-def A2Mult(phi):
-  '''A2 phi = -phi_{k+1,i}+phi_{k,i}
+def A2Mult(phi, epsl, dt, dx):
+  '''A2 phi = -phi_{k+1,i}+phi_{k,i} + eps*dt*(phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
   phi_{k+1,i} is not periodic
   @ parameters:
     phi: [nt, nx]
@@ -54,13 +54,16 @@ def A2Mult(phi):
   '''
   phi_kp1 = phi[1:,:]
   phi_k = phi[:-1,:]
-  out = -phi_kp1 + phi_k
+  phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
+  phi_im1 = jnp.roll(phi_kp1, 1, axis=1)
+  out = -phi_kp1 + phi_k + (phi_ip1 + phi_im1 - 2*phi_kp1) * epsl * dt/dx**2
   return out
 
 
 @jax.jit
-def A2TransMult(rho):
-  '''A2.T rho = (-rho[k-1,i] + rho[k,i]) #k = 0...(nt-1)
+def A2TransMult(rho, epsl, dt, dx):
+  '''A2.T rho = (-rho[k-1,i] + rho[k,i]) +eps*dt*(rho[k-1,i+1]+rho[k-1,i-1]-2*rho[k-1,i])/dx^2
+            #k = 0...(nt-1)
   rho[-1,:] = 0
   @ parameters:
     rho: [nt-1, nx]
@@ -69,7 +72,9 @@ def A2TransMult(rho):
   '''
   rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
   rho_k = jnp.pad(rho, ((0,1),(0,0)),  mode = 'constant', constant_values=0.0)
-  out = -rho_km1 + rho_k
+  rho_im1 = jnp.roll(rho_km1, 1, axis=1)
+  rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
+  out = -rho_km1 + rho_k + (rho_ip1 + rho_im1 - 2*rho_km1) * epsl * dt/dx**2
   return out
 
 
@@ -157,7 +162,7 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
 
 @partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
-                              g, dx, dt, c_on_rho, if_precondition, fv):
+                              g, dx, dt, c_on_rho, if_precondition, fv, epsl = 0.0):
   '''
   @ parameters
     f_in_H: [1, nx]
@@ -174,6 +179,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev,
     c_on_rho: scalar
     if_precondition: bool
     fv: [nx]
+    epsl: scalar, diffusion coefficient
 
   @ return 
     rho_next: [nt-1, nx]
@@ -183,7 +189,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev,
     err: jnp.array([err1, err2,err3])
   '''
 
-  delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev)) #[nt, nx]
+  delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
   # old version
   #delta_phi = jnp.concatenate([delta_phi_raw[0:1,:] + tau* mu_prev, delta_phi_raw[1:,:]], axis = 0) #[nt, nx]
   # new version:
@@ -208,7 +214,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev,
   z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
   z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
   # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
-  alp = rho_prev - sigma * A2Mult(phi_bar) / dt + sigma * f_in_H # [nt-1, nx]
+  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx) / dt + sigma * f_in_H # [nt-1, nx]
 
   rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
   # two possible quadratic terms on G, 4 combinations
@@ -240,7 +246,8 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev,
 
 def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, 
-                                          N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
+                                          N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
+                                          epsl = 0.0):
   '''
   @ parameters:
     f_in_H: [1, nx]
@@ -257,6 +264,7 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
     if_precondition: bool
     N_maxiter: int
     eps: scalar
+    epsl: scalar, diffusion coefficient
 
   @ return 
     results_all: list of (iter_no, m, rho, mu, phi)
@@ -291,7 +299,7 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
   results_all = []
   for i in range(N_maxiter):
     rho_next, phi_next, m_next, mu_next, error = pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, mu_prev, phi_prev,
-                                                                           g, dx, dt, c_on_rho, if_precondition, fv)
+                                                                           g, dx, dt, c_on_rho, if_precondition, fv, epsl)
     error_all.append(error)
     if error[2] < eps:
       break
