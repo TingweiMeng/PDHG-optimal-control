@@ -27,6 +27,7 @@ def main(argv):
   coarse_nx = FLAGS.coarse_nx
   coarse_ny = FLAGS.coarse_ny
   coarse_nt = FLAGS.coarse_nt
+  epsl = FLAGS.epsl
 
   if ndim > 2 or egno > 2:
     raise ValueError("ndim and egno must be 1 or 2")
@@ -86,7 +87,7 @@ def main(argv):
                                           g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps)
     else:
       results, errors = utils.timeit(pdhg_2d_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m1_0, m2_0, mu0, stepsz_param, 
-                    g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps)
+                    g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps, epsl = epsl)
     iter_no += results[-1][0]
     if ifsave:
       with open(filename + '_iter{}.pickle'.format(iter_no), 'wb') as file:
@@ -115,6 +116,7 @@ if __name__ == '__main__':
   flags.DEFINE_float('stepsz_param', 0.9, 'default step size constant')
   flags.DEFINE_boolean('if_precondition', True, 'if use preconditioning')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
+  flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_integer('iterno', 0, 'iteration number for the initialization filename')
   flags.DEFINE_integer('coarse_nx', 0, 'size of coarse x grids in initialization')
   flags.DEFINE_integer('coarse_ny', 0, 'size of coarse y grids in initialization')

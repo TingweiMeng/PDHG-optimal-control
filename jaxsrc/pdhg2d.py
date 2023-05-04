@@ -72,8 +72,9 @@ def A1TransMult_y(m, dt, dy):
   return out
 
 @jax.jit
-def A2Mult(phi):
-  '''A2 phi = -phi_{k+1,i,j}+phi_{k,i,j}
+def A2Mult(phi, epsl, dt, dx, dy):
+  '''A2 phi = -phi_{k+1,i,j}+phi_{k,i,j} + eps*dt*((phi_{k+1,i+1,j}+phi_{k+1,i-1,j}-2*phi_{k+1,i,j})/dx^2
+                                                  + (phi_{k+1,i,j+1}+phi_{k+1,i,j-1}-2*phi_{k+1,i,j})/dy^2)
   phi_{k+1,i} is not periodic
   @ parameters:
     phi: [nt, nx, ny]
@@ -82,12 +83,18 @@ def A2Mult(phi):
   '''
   phi_kp1 = phi[1:,:,:]
   phi_k = phi[:-1,:,:]
-  out = -phi_kp1 + phi_k
+  phi_im1 = jnp.roll(phi_kp1, 1, axis=1)
+  phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
+  phi_jm1 = jnp.roll(phi_kp1, 1, axis=2)
+  phi_jp1 = jnp.roll(phi_kp1, -1, axis=2)
+  out = -phi_kp1 + phi_k + epsl * dt * ((phi_ip1 + phi_im1 - 2*phi_kp1)/dx**2 + (phi_jp1 + phi_jm1 - 2*phi_kp1)/dy**2)
   return out
 
 @jax.jit
-def A2TransMult(rho):
-  '''A2.T rho = (-rho[k-1,i,j] + rho[k,i,j]) #k = 0...(nt-1)
+def A2TransMult(rho, epsl, dt, dx, dy):
+  '''A2.T rho = (-rho[k-1,i,j] + rho[k,i,j]) +eps*dt*((rho[k-1,i+1,j]+rho[k-1,i-1,j]-2*rho[k-1,i,j])/dx^2
+                                                      + (rho[k-1,i,j+1]+rho[k-1,i,j-1]-2*rho[k-1,i,j])/dx^2) 
+            #k = 0...(nt-1)
   rho[-1,:] = 0
   @ parameters:
     rho: [nt-1, nx]
@@ -96,7 +103,11 @@ def A2TransMult(rho):
   '''
   rho_km1 = jnp.pad(rho, ((1,0),(0,0),(0,0)), mode = 'constant', constant_values=0.0)
   rho_k = jnp.pad(rho, ((0,1),(0,0),(0,0)),  mode = 'constant', constant_values=0.0)
-  out = -rho_km1 + rho_k
+  rho_im1 = jnp.roll(rho_km1, 1, axis=1)
+  rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
+  rho_jm1 = jnp.roll(rho_km1, 1, axis=2)
+  rho_jp1 = jnp.roll(rho_km1, -1, axis=2)
+  out = -rho_km1 + rho_k + epsl * dt * ((rho_ip1 + rho_im1 - 2*rho_km1)/dx**2 + (rho_jp1 + rho_jm1 - 2*rho_km1)/dy**2)
   return out
 
 def check_HJ_sol_usingEO_L1_2d_xdep(phi, dt, dx, dy, f_in_H, c_in_H):
@@ -187,7 +198,7 @@ def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
 
 @partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev, mu_prev, phi_prev,
-                              g, dx, dy, dt, c_on_rho, if_precondition, fv, mask_candidates):
+                              g, dx, dy, dt, c_on_rho, if_precondition, fv, mask_candidates, epsl = 0):
   '''
   @ parameters
     f_in_H: [1, nx, ny]
@@ -205,6 +216,7 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
     if_precondition: bool
     fv: [nx, ny]
     mask_candidates: [16, 4]  mask for whether z1, z2, z1_left, z2_left are in the set C
+    epsl: scalar, diffusion coefficient
 
   @ return 
     rho_next: [nt-1, nx, ny]
@@ -213,7 +225,8 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
     mu_next: [1, nx, ny]
     err: jnp.array([err1, err2,err3])
   '''
-  delta_phi_raw = - tau * (A1TransMult_x(m1_prev, dt, dx) + A1TransMult_y(m2_prev, dt, dy) + A2TransMult(rho_prev)) #[nt, nx, ny]
+  delta_phi_raw = - tau * (A1TransMult_x(m1_prev, dt, dx) + A1TransMult_y(m2_prev, dt, dy) \
+                           + A2TransMult(rho_prev, epsl, dt, dx, dy)) # [nt, nx, ny]
   delta_phi_before_scaling = jnp.concatenate([delta_phi_raw[0:1,:,:] + tau* mu_prev, delta_phi_raw[1:,:,:]], axis = 0) # [nt, nx, ny]
   delta_phi = delta_phi_before_scaling / dt
 
@@ -233,7 +246,7 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
   z2 = m2_prev - sigma * A1Mult_y(phi_bar, dt, dy) / dt  # [nt-1, nx, ny]
   z1_left = jnp.roll(z1, 1, axis = 1)
   z2_left = jnp.roll(z2, 1, axis = 2)
-  alp = rho_prev - sigma * A2Mult(phi_bar) / dt + sigma * f_in_H # [nt-1, nx, ny]
+  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx, dy) / dt + sigma * f_in_H # [nt-1, nx, ny]
 
   rho_candidates_1 = -c_on_rho * jnp.ones_like(rho_prev)[None,...]  # left bound, [1,nt-1, nx,ny]
   # 16 candidates using mask
@@ -267,7 +280,8 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
 
 def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu0, stepsz_param, 
                                           g, dx, dy, dt, c_on_rho, if_precondition, 
-                                          N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
+                                          N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
+                                          epsl = 0.0):
   '''
   @ parameters:
     f_in_H: [1, nx, ny]
@@ -284,6 +298,7 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
     if_precondition: bool
     N_maxiter: int
     eps: scalar
+    epsl: scalar, diffusion coefficient
 
   @ return 
     results_all: list of (iter_no, m1, m2, rho, mu, phi)
@@ -324,7 +339,7 @@ def pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0_1, m0_2, mu
   results_all = []
   for i in range(N_maxiter):
     rho_next, phi_next, m1_next, m2_next, mu_next, error = pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, 
-              m1_prev, m2_prev, rho_prev, mu_prev, phi_prev, g, dx, dy, dt, c_on_rho, if_precondition, fv, mask)
+              m1_prev, m2_prev, rho_prev, mu_prev, phi_prev, g, dx, dy, dt, c_on_rho, if_precondition, fv, mask, epsl)
     error_all.append(error)
     if error[2] < eps:
       break
