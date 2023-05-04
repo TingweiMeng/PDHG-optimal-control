@@ -8,6 +8,9 @@ import numpy as np
 from absl import app, flags, logging
 import pickle
 from solver import set_up_example
+import pytz
+from datetime import datetime
+import os
 
 
 def main(argv):
@@ -58,11 +61,11 @@ def main(argv):
   # initialization
   if coarse_nx != 0:
     if ndim == 1:
-      initial_filename = './jaxsrc/eg{}_1d/nt{}_nx{}_iter{}.pickle'.format(egno, coarse_nt, coarse_nx, iterno_init)
+      initial_filename = FLAGS.init_dir + 'eg{}_1d/nt{}_nx{}_iter{}.pickle'.format(egno, coarse_nt, coarse_nx, iterno_init)
       phi0, rho0, m0, mu0 = get_initialization_1d(initial_filename, coarse_nt, coarse_nx, nt, nx)
       print("init phi0 shape {}".format(jnp.shape(phi0)))
     else:
-      initial_filename = './jaxsrc/eg{}_2d/nt{}_nx{}_ny{}_iter{}.pickle'.format(egno, coarse_nt, coarse_nx, coarse_ny, iterno_init)
+      initial_filename = FLAGS.init_dir + 'eg{}_2d/nt{}_nx{}_ny{}_iter{}.pickle'.format(egno, coarse_nt, coarse_nx, coarse_ny, iterno_init)
       phi0, rho0, m1_0, m2_0, mu0 = get_initialization_2d(initial_filename, coarse_nt, coarse_nx, coarse_ny, nt, nx, ny)
   else:
     phi0 = einshape("i...->(ki)...", g, k=nt)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
@@ -76,21 +79,35 @@ def main(argv):
       m2_0 = jnp.zeros([nt-1, nx, ny])
       mu0 = jnp.zeros([1, nx, ny])
 
+  time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
+  logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
+  save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
+
+  if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+  if ndim == 1:
+    filename = 'nt{}_nx{}'.format(nt, nx)
+  elif ndim == 2:
+    filename = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
+  sol_path = save_dir + '/{}.pickle'.format(filename)
   
   print("nt = {}, nx = {}, ny = {}".format(nt, nx, ny))
   print("shape g {}, f {}, c {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
+  print("save dir {}".format(save_dir))
+  print("sol path {}".format(sol_path), flush=True)
 
   iter_no = 0
   for i in range(rept_num):
     if ndim == 1:
       results, errors = utils.timeit(pdhg_1d_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
-                                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps)
+                                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps,
+                                          epsl = epsl)
     else:
       results, errors = utils.timeit(pdhg_2d_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m1_0, m2_0, mu0, stepsz_param, 
                     g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps, epsl = epsl)
     iter_no += results[-1][0]
     if ifsave:
-      with open(filename + '_iter{}.pickle'.format(iter_no), 'wb') as file:
+      with open(sol_path + '_iter{}.pickle'.format(iter_no), 'wb') as file:
         pickle.dump((results, errors), file)
         print('saved to {}'.format(file), flush = True)
     if results[-1][0] < N_maxiter:
@@ -110,7 +127,7 @@ if __name__ == '__main__':
   flags.DEFINE_integer('nt', 11, 'size of t grids')
   flags.DEFINE_integer('nx', 20, 'size of x grids')
   flags.DEFINE_integer('ny', 20, 'size of y grids')
-  flags.DEFINE_integer('ndim', 1, 'dimensionality')
+  flags.DEFINE_integer('ndim', 2, 'dimensionality')
   flags.DEFINE_integer('egno', 1, 'index of example')
   flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
   flags.DEFINE_float('stepsz_param', 0.9, 'default step size constant')
@@ -121,5 +138,7 @@ if __name__ == '__main__':
   flags.DEFINE_integer('coarse_nx', 0, 'size of coarse x grids in initialization')
   flags.DEFINE_integer('coarse_ny', 0, 'size of coarse y grids in initialization')
   flags.DEFINE_integer('coarse_nt', 0, 'size of coarse t grids in initialization')
+
+  flags.DEFINE_string('init_dir', '', 'dir for initialization')
   
   app.run(main)

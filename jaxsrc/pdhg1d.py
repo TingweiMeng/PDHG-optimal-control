@@ -276,6 +276,8 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
   m_prev = m0
   mu_prev = mu0
 
+  print('epsl: {}'.format(epsl), flush=True)
+
   if if_precondition:
     tau = stepsz_param
   else:
