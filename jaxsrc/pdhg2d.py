@@ -7,6 +7,7 @@ import os
 import solver
 from solver import interpolation_x, interpolation_t, interpolation_y
 import pickle
+from save_analysis import compute_HJ_residual_EO_2d_xdep
 
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -109,30 +110,6 @@ def A2TransMult(rho, epsl, dt, dx, dy):
   rho_jp1 = jnp.roll(rho_km1, -1, axis=2)
   out = -rho_km1 + rho_k + epsl * dt * ((rho_ip1 + rho_im1 - 2*rho_km1)/dx**2 + (rho_jp1 + rho_jm1 - 2*rho_km1)/dy**2)
   return out
-
-def check_HJ_sol_usingEO_L1_2d_xdep(phi, dt, dx, dy, f_in_H, c_in_H, epsl):
-  '''
-  check a solution is true or not. H is L1, 2-dimensional
-  @parameters:
-    phi: [nt, nx, ny]
-    dt: scalar
-    dx, dy: scalar
-    f_in_H: [1, nx, ny]
-    c_in_H: [1, nx, ny]
-    epsl: scalar, diffusion coefficient
-  @ return:
-    HJ_residual: [nt-1, nx, ny]
-  '''
-  dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
-  dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
-  dphidy_left = (phi - jnp.roll(phi, 1, axis = 2))/dy
-  dphidy_right = (jnp.roll(phi, -1, axis=2) - phi)/dy
-  H1_val = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
-  H2_val = jnp.maximum(-dphidy_right, 0) + jnp.maximum(dphidy_left, 0)
-  H_val = c_in_H * (H1_val + H2_val) + f_in_H
-  Lap = (dphidx_right - dphidx_left) / dx + (dphidy_right - dphidy_left) / dy
-  HJ_residual = (phi[1:,...] - phi[:-1,...])/dt + H_val[1:,...] - epsl * Lap[1:,...]
-  return HJ_residual
 
 def get_Gsq_from_rho(rho_plus_c_mul_cinH, z1, z2):
   '''
@@ -275,7 +252,7 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
   err2_mu = jnp.linalg.norm(mu_next - mu_prev)
   err2 = jnp.sqrt(err2_rho*err2_rho + err2_m1 * err2_m1 + err2_m2 * err2_m2 + err2_mu*err2_mu)
   # err3: equation error
-  HJ_residual = check_HJ_sol_usingEO_L1_2d_xdep(phi_next, dt, dx, dy, f_in_H, c_in_H, epsl)
+  HJ_residual = compute_HJ_residual_EO_2d_xdep(phi_next, dt, dx, dy, f_in_H, c_in_H, epsl)
   err3 = jnp.mean(jnp.abs(HJ_residual))
   return rho_next, phi_next, m1_next, m2_next, mu_next, jnp.array([err1, err2, err3])
 
