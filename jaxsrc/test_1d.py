@@ -93,13 +93,15 @@ def main(argv):
   print("shape g {}, f {}, c {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
 
   iter_no = 0
+  utils.timer.tic('test')
+  
   for i in range(rept_num):
     if ndim == 1:
-      results, errors = utils.timeit(pdhg_1d_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
+      results, errors = pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps,
                                           epsl = epsl)
     else:
-      results, errors = utils.timeit(pdhg_2d_periodic_rho_m_EO_L1_xdep)(f_in_H, c_in_H, phi0, rho0, m1_0, m2_0, mu0, stepsz_param, 
+      results, errors = pdhg_2d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m1_0, m2_0, mu0, stepsz_param, 
                     g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps, epsl = epsl)
     iter_no += results[-1][0]
     if ifsave:
@@ -115,6 +117,8 @@ def main(argv):
     rho0 = results[-1][-3]
     mu0 = results[-1][-2]
     phi0 = results[-1][-1]
+
+  utils.timer.toc('test')
 
 
 if __name__ == '__main__':
