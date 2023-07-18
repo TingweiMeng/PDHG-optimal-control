@@ -109,10 +109,15 @@ def set_up_example(egno, ndim, nt, nx, ny, x_period, y_period):
     # example 1
     f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-  else:
+  elif egno == 2:
     # example 2
     f_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 0:  # x-indep case
+    f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+  else:
+    raise ValueError("egno {} not implemented".format(egno))
   return J, f_in_H_fn, c_in_H_fn, filename
 
 if __name__ == "__main__":
