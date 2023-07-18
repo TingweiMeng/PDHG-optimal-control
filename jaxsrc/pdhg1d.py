@@ -286,13 +286,14 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
                                                                            g, dx, dt, c_on_rho, if_precondition, fv, epsl)
     error_all.append(error)
     if error[2] < eps:
+      print('PDHG converges at iter {}'.format(i), flush=True)
       break
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
       print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, m_prev, rho_prev, mu_prev, phi_prev))
-      print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}, min rho {}'.format(i, 
+      print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
    
     rho_prev = rho_next
