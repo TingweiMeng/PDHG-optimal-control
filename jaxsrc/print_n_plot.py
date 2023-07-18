@@ -10,6 +10,25 @@ import pickle
 import matplotlib.pyplot as plt
 import os
 from solver import set_up_example
+from functools import partial
+
+def H_L1_true_sol_1d(x, t, fn_J):
+  '''
+  @params:
+    x: [1]
+    t: scalar
+    fn_J: function taking [...,1] and returning [...]
+  @return:
+    phi: scalar
+  '''
+  # phi(x,t) = min_{ |u-x| <= t } J(u)
+  n_grids = 101
+  x_tests = jnp.linspace(x[0]-t, x[0]+t, num = n_grids)[...,None]  # [n_grids, 1]
+  J_tests = fn_J(x_tests)  # [n_grids]
+  return jnp.min(J_tests)
+
+H_L1_true_sol_1d_batch = partial(jax.jit, static_argnums=(2))(jax.vmap(H_L1_true_sol_1d, in_axes=(0, 0, None), out_axes=0))
+H_L1_true_sol_1d_batch2 = jax.vmap(H_L1_true_sol_1d_batch, in_axes=(0, 0, None), out_axes=0)
 
 # @jax.jit
 def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g):
@@ -174,6 +193,14 @@ def plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname):
     plt.ylabel('y')
     plt.savefig(figname + 'nt{}_nx{}_ny{}_error.png'.format(nt, nx, ny))
 
+def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
+  save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
+  if ndim == 1:
+    filename_prefix = 'nt{}_nx{}'.format(nt, nx)
+  elif ndim == 2:
+    filename_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
+  return save_dir, filename_prefix
+
 def main(argv):
     nt = FLAGS.nt
     nx = FLAGS.nx
@@ -186,16 +213,15 @@ def main(argv):
     x_period = 2.0
     y_period = 2.0
 
-    figname = "./jaxsrc/eg{}_{}d/".format(egno, ndim)
+    figname = "./eg{}_{}d/".format(egno, ndim)
     if not os.path.exists(figname):
         os.makedirs(figname)
     
     J, f_in_H_fn, c_in_H_fn, filename_prefix = set_up_example(egno, ndim, nt, nx, ny, x_period, y_period)
 
-    if ndim == 1:
-        filename = filename_prefix + '_iter{}.pickle'.format(iterno)
-    else:
-        filename = filename_prefix + '_iter{}.pickle'.format(iterno)
+    saved_file_dir, saved_filename_prefix = get_save_dir(FLAGS.time_stamp, egno, ndim, nt, nx, ny)
+
+    filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
     phi = read_solution(filename)
 
     # set up grid
@@ -218,7 +244,24 @@ def main(argv):
         f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
         c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
         print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
+        if egno == 1 or egno == 2:
+            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
+        elif egno == 0:
+            x_arr = einshape("ij->kij", x_arr_1d, k=nt_dense) # [nt_dense, nx_dense, 1]
+            t_arr_1d = jnp.linspace(0.0, T, num = nt_dense)  # [nt_dense]
+            t_arr = einshape("i->ik", t_arr_1d, k=nx_dense)  # [nt_dense, nx_dense]
+            phi_dense_list = []
+            for i in range(nt_dense):
+                phi_dense_list.append(H_L1_true_sol_1d_batch(x_arr_1d, t_arr_1d[i] + jnp.zeros(nx_dense), J))
+            # phi_dense = H_L1_true_sol_1d_batch2(x_arr, t_arr, J)
+            phi_dense = jnp.stack(phi_dense_list, axis = 0)
+            # test: plot phi_dense
+            fig = plt.figure()
+            plt.contourf(x_arr[...,0], t_arr, phi_dense)
+            plt.colorbar()
+            plt.xlabel('x')
+            plt.ylabel('t')
+            plt.savefig('test.png')
         err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
         plot_solution_1d(phi, error, nt, nx, T, x_period, figname)
     elif ndim == 2:
@@ -245,6 +288,7 @@ if __name__ == "__main__":
     flags.DEFINE_integer('ndim', 1, 'dimensionality')
     flags.DEFINE_integer('egno', 1, 'index of example')
     flags.DEFINE_integer('iterno', 100000, 'iteration number in filename')
+    flags.DEFINE_string('time_stamp', '', 'time stamp in the filename')
     app.run(main)
 
     
