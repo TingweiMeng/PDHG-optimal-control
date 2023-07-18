@@ -114,10 +114,10 @@ def A2TransMult(rho, epsl, dt, dx, dy):
 def get_Gsq_from_rho(rho_plus_c_mul_cinH, z1, z2):
   '''
   @parameters:
-    rho_plus_c_mul_cinH: [17, nt-1, nx, ny]
+    rho_plus_c_mul_cinH: [21, nt-1, nx, ny]
     z1, z2: [nt-1, nx, ny]
   @return 
-    fn_val: [17, nt-1, nx, ny]
+    fn_val: [21, nt-1, nx, ny]
   '''
   n_can = jnp.shape(rho_plus_c_mul_cinH)[0]
   z1_left = jnp.roll(z1, 1, axis = 1)
@@ -141,7 +141,7 @@ def get_minimizer_ind(rho_candidates, alp, c, z1, z2, c_in_H):
   '''
   for each (k,i,j) index, find min_r (r - alp)^2 + G(rho)_{k,i,j}^2 in candidates
   @ parameters:
-    rho_candidates: [17, nt-1, nx, ny]
+    rho_candidates: [21, nt-1, nx, ny]
     alp: [nt-1, nx, ny]
     c: scalar
     z1, z2: [nt-1, nx, ny]
@@ -235,7 +235,12 @@ def pdhg_2d_periodic_iter(f_in_H, c_in_H, tau, sigma, m1_prev, m2_prev, rho_prev
               + (-z2_left)[None,...] * mask_candidates[:,3,None,None,None]  # [16, nt-1, nx, ny]
   rho_candidates_16 = jnp.maximum((alp[None,...] - num_vec_in_C * c_in_H[None,...] **2 * c_on_rho - c_in_H[None,...] *\
               sum_vec_in_C) / (1 + num_vec_in_C * c_in_H[None,...]**2), -c_on_rho)
-  rho_candidates = jnp.concatenate([rho_candidates_1, rho_candidates_16], axis = 0) # [17, nt-1, nx, ny]  (16 candidates and lower bound)
+  rho_candidates_17 = jnp.maximum(-c_on_rho - z1/ c_in_H, -c_on_rho)[None,...]  # [1, nt-1, nx, ny]
+  rho_candidates_18 = jnp.maximum(-c_on_rho - z2/ c_in_H, -c_on_rho)[None,...]  # [1, nt-1, nx, ny]
+  rho_candidates_19 = jnp.maximum(-c_on_rho + z1_left/ c_in_H, -c_on_rho)[None,...]  # [1, nt-1, nx, ny]
+  rho_candidates_20 = jnp.maximum(-c_on_rho + z2_left/ c_in_H, -c_on_rho)[None,...]  # [1, nt-1, nx, ny]
+  rho_candidates = jnp.concatenate([rho_candidates_1, rho_candidates_16, rho_candidates_17, rho_candidates_18,
+                                    rho_candidates_19, rho_candidates_20], axis = 0) # [21, nt-1, nx, ny]  (16 candidates, lower bound, and boundary candidates)
   rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z1, z2, c_in_H)
 
   m1_next = jnp.minimum(jnp.maximum(z1, -(rho_next + c_on_rho) * c_in_H), 
