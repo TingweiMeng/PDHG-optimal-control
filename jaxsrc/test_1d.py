@@ -12,6 +12,7 @@ import pytz
 from datetime import datetime
 import os
 import save_analysis
+from print_n_plot import get_save_dir
 
 
 def main(argv):
@@ -82,19 +83,15 @@ def main(argv):
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
   logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
-  save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
 
-  if ndim == 1:
-    filename = 'nt{}_nx{}'.format(nt, nx)
-  elif ndim == 2:
-    filename = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
+  save_dir, filename_prefix = get_save_dir(time_stamp, egno, ndim, nt, nx, ny)
   
   print("nt = {}, nx = {}, ny = {}".format(nt, nx, ny))
   print("shape g {}, f {}, c {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
 
   iter_no = 0
   utils.timer.tic('test')
-  
+
   for i in range(rept_num):
     if ndim == 1:
       results, errors = pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
@@ -105,7 +102,7 @@ def main(argv):
                     g, dx, dy, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps, epsl = epsl)
     iter_no += results[-1][0]
     if ifsave:
-      filename = filename + '_iter{}'.format(iter_no)
+      filename = filename_prefix + '_iter{}'.format(iter_no)
       save_analysis.save(save_dir, filename, (results, errors))
     if results[-1][0] < N_maxiter:
       break
