@@ -4,3 +4,5 @@ useless/*
 **/results*/*
 **/*log
 **/check_points*/*
+**/*.pickle
+**/*.png
