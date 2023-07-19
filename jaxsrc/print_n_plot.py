@@ -82,24 +82,38 @@ def read_solution(filename):
     phi = results[-1][-1]
     return phi
 
+def get_sol_on_coarse_grid_1d(sol, coarse_nt, coarse_nx):
+    nt, nx = jnp.shape(sol)
+    if (nt - 1) % (coarse_nt - 1) != 0 or nx % coarse_nx != 0:
+        raise ValueError("nx and nt-1 must be divisible by coarse_nx and coarse_nt-1")
+    else:
+        nt_factor = (nt-1) // (coarse_nt-1)
+        nx_factor = nx // coarse_nx
+        sol_coarse = sol[::nt_factor, ::nx_factor]
+    return sol_coarse
+
+def get_sol_on_coarse_grid_2d(sol, coarse_nt, coarse_nx, coarse_ny):
+    nt, nx, ny = jnp.shape(sol)
+    if (nt - 1) % (coarse_nt - 1) != 0 or nx % coarse_nx != 0 or ny % coarse_ny != 0:
+        raise ValueError("nx, ny and nt-1 must be divisible by coarse_nx, coarse_ny and coarse_nt-1")
+    else:
+        nt_factor = (nt-1) // (coarse_nt-1)
+        nx_factor = nx // coarse_nx
+        ny_factor = ny // coarse_ny
+        sol_coarse = sol[::nt_factor, ::nx_factor, ::ny_factor]
+    return sol_coarse
+
 def compute_err_1d(phi, true_soln):
     '''
     @parameters:
-        phi, true_soln: [nt, nx]
+        phi: [nt, nx]
+        true_soln: [nt_dense, nx_dense]
     @return:
         err_l1, err_l1_rel: scalar
         error: [nt, nx]
     '''
     nt, nx = jnp.shape(phi)
-    nt_dense, nx_dense = jnp.shape(true_soln)
-    if (nt_dense - 1) % (nt - 1) == 0 and nx_dense % nx == 0:
-        # true values are on grid points
-        nt_factor = (nt_dense - 1)// (nt-1)
-        nx_factor = nx_dense// nx
-        phi_true = true_soln[::nt_factor, ::nx_factor]
-    else:
-        print("ERROR: true solution is not on grid points")
-
+    phi_true = get_sol_on_coarse_grid_1d(true_soln, nt, nx)
     error = phi - phi_true
     err_l1 = jnp.mean(jnp.abs(error))
     err_l1_rel = err_l1/ jnp.mean(jnp.abs(phi_true))
@@ -108,21 +122,14 @@ def compute_err_1d(phi, true_soln):
 def compute_err_2d(phi, true_soln):
     '''
     @parameters:
-        phi, true_soln: [nt, nx, ny]
+        phi: [nt, nx, ny]
+        true_soln: [nt_dense, nx_dense, ny_dense]
     @return:
         err_l1, err_l1_rel: scalar
         error: [nt, nx, ny]
     '''
     nt, nx, ny = jnp.shape(phi)
-    nt_dense, nx_dense, ny_dense = jnp.shape(true_soln)
-    if (nt_dense - 1) % (nt - 1) == 0 and nx_dense % nx == 0 and ny_dense % ny == 0:
-        # true values are on grid points
-        nt_factor = (nt_dense - 1)// (nt-1)
-        nx_factor = nx_dense// nx
-        ny_factor = ny_dense// ny
-        phi_true = true_soln[::nt_factor, ::nx_factor, ::ny_factor]
-    else:
-        print("ERROR: true solution is not on grid points")
+    phi_true = get_sol_on_coarse_grid_2d(true_soln, nt, nx, ny)
     error = phi - phi_true
     err_l1 = jnp.mean(jnp.abs(error))
     err_l1_rel = err_l1/ jnp.mean(jnp.abs(phi_true))
