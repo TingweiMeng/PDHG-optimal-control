@@ -87,21 +87,37 @@ def interpolation_y(fn_left, fn_right, scaling_num):
     # fn_dense[..., i::scaling_num] = fn_left + i * incremental
   return fn_dense
 
-def set_up_example(egno, ndim, nt, nx, ny, x_period, y_period):
+def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, nt, dt, dx):
+  '''
+  @params:
+    J_on_grids: [nx]
+    fn_H_plus, fn_H_minus: functions taking [nx] and returning [nx]
+  @return:
+    phi: [nt, nx]
+  '''
+  phi_curr = J_on_grids
+  phi_list = [phi_curr]
+  for i in range(nt-1):
+    dphidx_left = (phi_curr - jnp.roll(phi_curr, 1, axis=-1))/dx
+    dphidx_right = (jnp.roll(phi_curr, -1, axis=-1) - phi_curr)/dx
+    phi_next = phi_curr - dt * (fn_H_plus(dphidx_left) + fn_H_minus(dphidx_right))
+    phi_list.append(phi_next)
+    phi_curr = phi_next
+  return jnp.stack(phi_list, axis = 0)
+
+
+def set_up_example_fns(egno, ndim, x_period, y_period):
   '''
   @ parameters:
-    egno, ndim, nt, nx, ny: int
+    egno, ndim: int
     x_period, y_period: scalars
   @ return:
     J, f_in_H_fn, c_in_H_fn: functions
-    filename: string
   '''
   if ndim == 1:
     alpha = 2 * jnp.pi / x_period
-    filename = './jaxsrc/eg{}_1d/nt{}_nx{}'.format(egno, nt, nx)
   else:
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
-    filename = './jaxsrc/eg{}_2d/nt{}_nx{}_ny{}'.format(egno, nt, nx, ny)
   
   J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
 
@@ -118,7 +134,9 @@ def set_up_example(egno, ndim, nt, nx, ny, x_period, y_period):
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
-  return J, f_in_H_fn, c_in_H_fn, filename
+  return J, f_in_H_fn, c_in_H_fn
+
+
 
 if __name__ == "__main__":
   n = 20
