@@ -304,7 +304,7 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, steps
     mu_prev = mu_next
   
   # print the final error
-  print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
+  print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
   results_all.append((i+1, m_next, rho_next, mu_next, phi_next))
   return results_all, jnp.array(error_all)
 
