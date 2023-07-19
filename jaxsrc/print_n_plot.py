@@ -2,14 +2,12 @@ import jax
 import jax.numpy as jnp
 from einshape import jax_einshape as einshape
 import utils
-from pdhg1d import pdhg_1d_periodic_rho_m_EO_L1_xdep
-from pdhg2d import pdhg_2d_periodic_rho_m_EO_L1_xdep
 import numpy as np
 from absl import app, flags, logging
 import pickle
 import matplotlib.pyplot as plt
 import os
-from solver import set_up_example
+from solver import set_up_example_fns
 from functools import partial
 
 def H_L1_true_sol_1d(x, t, fn_J):
@@ -201,6 +199,43 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
     filename_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
   return save_dir, filename_prefix
 
+def compute_ground_truth(egno, ndim, T, x_period, y_period):
+    J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
+    nt_dense = 16001
+    nx_dense = 8000
+    ny_dense = 8000
+    dt_dense = T / (nt_dense - 1)
+    dx_dense = x_period / nx_dense
+    dy_dense = y_period / ny_dense
+    if ndim == 1:
+        x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
+        x_arr_1d = jnp.array(x_arr_dense[:-1, None])  # [nx_dense, 1]
+        g = J(x_arr_1d)  # [nx_dense]
+        f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
+        c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
+        print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
+        if egno == 1 or egno == 2:
+            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
+        elif egno == 0:
+            t_arr_1d = jnp.linspace(0.0, T, num = nt_dense)  # [nt_dense]
+            phi_dense_list = []
+            for i in range(nt_dense):
+                phi_dense_list.append(H_L1_true_sol_1d_batch(x_arr_1d, t_arr_1d[i] + jnp.zeros(nx_dense), J))
+            phi_dense = jnp.stack(phi_dense_list, axis = 0)
+    elif ndim == 2:
+        x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
+        y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
+        x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense)
+        x_arr_2d = jnp.array(np.concatenate([x_mesh_dense[:-1,:-1, None], y_mesh_dense[:-1, :-1, None]], axis = -1))  # [nx_dense, ny_dense, 2]
+        g = J(x_arr_2d)  # [nx_dense, ny_dense]
+        f_in_H = f_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
+        c_in_H = c_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
+        print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
+        phi_dense = compute_EO_forward_solution_2d(nt_dense, dx_dense, dy_dense, dt_dense, f_in_H, c_in_H, g)
+    else:
+        raise ValueError("ndim should be 1 or 2")
+    return phi_dense
+
 def main(argv):
     nt = FLAGS.nt
     nx = FLAGS.nx
@@ -216,67 +251,20 @@ def main(argv):
     figname = "./eg{}_{}d/".format(egno, ndim)
     if not os.path.exists(figname):
         os.makedirs(figname)
-    
-    J, f_in_H_fn, c_in_H_fn, filename_prefix = set_up_example(egno, ndim, nt, nx, ny, x_period, y_period)
 
     saved_file_dir, saved_filename_prefix = get_save_dir(FLAGS.time_stamp, egno, ndim, nt, nx, ny)
 
     filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
     phi = read_solution(filename)
+    phi_dense = compute_ground_truth(egno, ndim, T, x_period, y_period)
 
-    # set up grid
-    dx = x_period / nx
-    dy = y_period / ny
-    dt = T / (nt - 1)
-
-    nt_dense = 16001
-    nx_dense = 8000
-    ny_dense = 8000
-    dt_dense = T / (nt_dense - 1)
-    dx_dense = x_period / nx_dense
-    dy_dense = y_period / ny_dense
-    
-    # compute solution
-    if ndim == 1:
-        x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
-        x_arr_1d = jnp.array(x_arr_dense[:-1, None])  # [nx_dense, 1]
-        g = J(x_arr_1d)  # [nx_dense]
-        f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
-        c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
-        print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        if egno == 1 or egno == 2:
-            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
-        elif egno == 0:
-            x_arr = einshape("ij->kij", x_arr_1d, k=nt_dense) # [nt_dense, nx_dense, 1]
-            t_arr_1d = jnp.linspace(0.0, T, num = nt_dense)  # [nt_dense]
-            t_arr = einshape("i->ik", t_arr_1d, k=nx_dense)  # [nt_dense, nx_dense]
-            phi_dense_list = []
-            for i in range(nt_dense):
-                phi_dense_list.append(H_L1_true_sol_1d_batch(x_arr_1d, t_arr_1d[i] + jnp.zeros(nx_dense), J))
-            # phi_dense = H_L1_true_sol_1d_batch2(x_arr, t_arr, J)
-            phi_dense = jnp.stack(phi_dense_list, axis = 0)
-            # test: plot phi_dense
-            fig = plt.figure()
-            plt.contourf(x_arr[...,0], t_arr, phi_dense)
-            plt.colorbar()
-            plt.xlabel('x')
-            plt.ylabel('t')
-            plt.savefig('test.png')
+    # compute error
+    if ndim == 1:        
         err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
         plot_solution_1d(phi, error, nt, nx, T, x_period, figname)
     elif ndim == 2:
-        x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
-        y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
-        x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense)
-        x_arr_2d = jnp.array(np.concatenate([x_mesh_dense[:-1,:-1, None], y_mesh_dense[:-1, :-1, None]], axis = -1))  # [nx_dense, ny_dense, 2]
-        g = J(x_arr_2d)  # [nx_dense, ny_dense]
-        f_in_H = f_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
-        c_in_H = c_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
-        print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        phi_dense = compute_EO_forward_solution_2d(nt_dense, dx_dense, dy_dense, dt_dense, f_in_H, c_in_H, g)
-        err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
+        err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
         plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname)
-
     print("err_l1 {}, err_l1_rel {}".format(err_l1, err_l1_rel))
     
 
