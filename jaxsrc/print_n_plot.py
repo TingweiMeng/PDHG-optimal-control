@@ -249,7 +249,6 @@ def main(argv):
     ny = FLAGS.ny
     ndim = FLAGS.ndim
     egno = FLAGS.egno
-    iterno = FLAGS.iterno
 
     T = 1.0
     x_period = 2.0
@@ -259,9 +258,10 @@ def main(argv):
     if not os.path.exists(figname):
         os.makedirs(figname)
 
-    saved_file_dir, saved_filename_prefix = get_save_dir(FLAGS.time_stamp, egno, ndim, nt, nx, ny)
+    # saved_file_dir, saved_filename_prefix = get_save_dir(FLAGS.time_stamp, egno, ndim, nt, nx, ny)
 
-    filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
+    # filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
+    filename = FLAGS.filename
     phi = read_solution(filename)
     phi_dense = compute_ground_truth(egno, ndim, T, x_period, y_period)
 
@@ -282,8 +282,9 @@ if __name__ == "__main__":
     flags.DEFINE_integer('ny', 20, 'size of y grids')
     flags.DEFINE_integer('ndim', 1, 'dimensionality')
     flags.DEFINE_integer('egno', 1, 'index of example')
-    flags.DEFINE_integer('iterno', 100000, 'iteration number in filename')
-    flags.DEFINE_string('time_stamp', '', 'time stamp in the filename')
+    # flags.DEFINE_integer('iterno', 100000, 'iteration number in filename')
+    # flags.DEFINE_string('time_stamp', '', 'time stamp in the filename')
+    flags.DEFINE_string('filename', '', 'the name of the pickle file to read')
     app.run(main)
 
     
