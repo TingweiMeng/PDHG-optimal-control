@@ -38,6 +38,35 @@ tridiagonal_solve_batch = jax.vmap(tridiagonal_solve, in_axes=(None, 1, None, 1)
 tridiagonal_solve_batch_2d = jax.vmap(jax.vmap(tridiagonal_solve, in_axes=(None, -1, None, -1), out_axes=(-1)), 
                             in_axes=(None, -1, None, -1), out_axes=(-1))
 
+
+@partial(jax.jit, static_argnames=("Neumann_cond",))
+def Poisson_eqt_solver(source_term, fv, dt, Neumann_cond = True):
+  ''' this solves -(D_{tt} + D_{xx}) u = source_term with zero Dirichlet at t=0
+  if Neumann_cond is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
+  @parameters:
+    source_term: [nt, nx]
+    fv: [nx], complex, this is FFT of neg Laplacian -Dxx
+    dt: scalar
+  @return:
+    phi_next: [nt, nx]
+  '''
+  nt, nx = jnp.shape(source_term)
+  # exclude the first row wrt t
+  v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt, nx]
+  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  if Neumann_cond:
+    neg_Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
+  else:
+    neg_Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-1))  # [nt-1]
+  neg_Lap_t_diag_rep = einshape('n->nm', neg_Lap_t_diag, m = nx)  # [nt-1, nx]
+  thomas_b = einshape('n->mn', fv, m = nt-1) + neg_Lap_t_diag_rep # [nt-1, nx]
+  
+  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) # [nt-1, nx]
+  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
+  phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
+  return phi_update
+
 def interpolation_t(fn_left, fn_right, scaling_num):
   '''
   Note: the interpolated matrix does not include the last element of fn_right
@@ -132,6 +161,9 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   elif egno == 0:  # x-indep case
     f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 10:  # quad case, no f and c
+    f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
   else:
     raise ValueError("egno {} not implemented".format(egno))
   return J, f_in_H_fn, c_in_H_fn

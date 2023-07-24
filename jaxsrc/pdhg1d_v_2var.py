@@ -8,8 +8,12 @@ import os
 import solver
 from solver import interpolation_x, interpolation_t
 import pickle
-from save_analysis import compute_HJ_residual_EO_1d_xdep
+from save_analysis import compute_HJ_residual_EO_1d_general
 import matplotlib.pyplot as plt
+
+
+from pdhg1d_m_2var import A1Mult, get_minimizer_ind, A1TransMult, pdhg_1d_periodic_iter as pdhg_1d_periodic_iter_prev
+from pdhg1d_m_2var import A2Mult as A2Mult_prev, A2TransMult as A2TransMult_prev
 
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -109,36 +113,64 @@ def A2TransMult(rho, epsl, dt, dx):
   out = -rho_km1 + rho_k + (rho_ip1 + rho_im1 - 2*rho_km1) * epsl * dt/dx**2
   return out
 
-@jax.jit
-def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
-  ''' this solves -(D_{tt} + D_{xx}) phi = delta_phi with zero Dirichlet at t=0 and 0 Neumann at t=T
-  @parameters:
-    delta_phi: [nt, nx]
-    phi_prev: [nt, nx]
-    fv: [nx], complex, this is FFT of neg Laplacian -Dxx
-    dt: scalar
-  @return:
-    phi_next: [nt, nx]
-  '''
-  nt, nx = jnp.shape(delta_phi)
-  # exclude the first row wrt t
-  v_Fourier =  jnp.fft.fft(delta_phi[1:,:], axis = 1)  # [nt, nx]
-  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  neg_Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
-  neg_Lap_t_diag_rep = einshape('n->nm', neg_Lap_t_diag, m = nx)  # [nt-1, nx]
-  thomas_b = einshape('n->mn', fv, m = nt-1) + neg_Lap_t_diag_rep # [nt-1, nx]
-  
-  phi_fouir_part = solver.tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) # [nt-1, nx]
-  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
-  phi_next = phi_prev + jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
-  return phi_next
+def updating_rho(rho_prev, phi, vp, vm, updating_method, sigma, dt, dx, epsl, c_on_rho, Hstar_plus_fn, Hstar_minus_fn):
+  vec = A1Mult_pos(phi, dt, dx) * vp + A1Mult_neg(phi, dt, dx) * vm + A2Mult(phi, epsl, dt, dx) # [nt-1, nx]
+  vec = vec + Hstar_plus_fn(vm) * dt + Hstar_minus_fn(vp) * dt
+  if updating_method == 0:
+    rho_next = jnp.maximum(rho_prev - sigma * vec / dt, -c_on_rho)  # [nt-1, nx]
+  elif updating_method == 1:
+    rho_next = (rho_prev + c_on_rho) * jnp.exp(-sigma * vec / dt) - c_on_rho  # [nt-1, nx]
+  else:
+    raise ValueError("rho updating method not implemented")
+  return rho_next
 
-@partial(jax.jit, static_argnames=("if_precondition",))
-def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
+def updating_v(vp_prev, vm_prev, phi, rho, updating_method, sigma, dt, dx, c_on_rho, 
+               Hstar_plus_help_fn, Hstar_minus_help_fn, eps=1e-4):
+  '''
+  @ parameters:
+    Hstar_plus_help_fn and Hstar_minus_help_fn are gradient function if updating_method == 3
+        they are prox point operator otherwise
+  '''
+  if updating_method == 3:
+    pp_next_raw = -A1Mult_pos(phi, dt, dx) / dt
+    pm_next_raw = -A1Mult_neg(phi, dt, dx) / dt
+    vp_next = Hstar_minus_help_fn(pp_next_raw, 0)  # [nt-1, nx]
+    vm_next = Hstar_plus_help_fn(pm_next_raw, 0)  # [nt-1, nx]
+  else: 
+    if updating_method == 0:
+      t = sigma * (rho + c_on_rho + eps)
+    elif updating_method == 1:
+      t = sigma
+    elif updating_method == 2:
+      t = sigma / (rho + c_on_rho + eps)
+    else:
+      raise ValueError("v updating method not implemented")
+    vp_next_raw = vp_prev - t * A1Mult_pos(phi, dt, dx) / dt  # [nt-1, nx]
+    vm_next_raw = vm_prev - t * A1Mult_neg(phi, dt, dx) / dt  # [nt-1, nx]
+    vp_next = Hstar_minus_help_fn(vp_next_raw, t)  # [nt-1, nx]
+    vm_next = Hstar_plus_help_fn(vm_next_raw, t)  # [nt-1, nx]  
+  return vp_next, vm_next
+
+  
+@partial(jax.jit, static_argnames=("if_precondition","v_method", "rho_method", "updating_rho_first",
+                                   "Hstar_plus_fn", "Hstar_minus_fn", "Hstar_plus_help_fn", "Hstar_minus_help_fn",
+                                   "H_plus_fn", "H_minus_fn"))
+def pdhg_1d_periodic_iter(v_method, rho_method, updating_rho_first,
+                              Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn,
+                              H_plus_fn, H_minus_fn,
+                              f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
                               g, dx, dt, c_on_rho, if_precondition, fv, epsl = 0.0):
   '''
   @ parameters
+    v_method: method for updating v:
+        0: pdhg with penalty |v-v^l|^2/2
+        1: pdhg with penalty (rho+c)|v-v^l|^2/2
+        2: pdhg with penalty (rho+c)^2|v-v^l|^2/2
+        3: updating using v = nabla H(Dx phi)
+    rho_method: method for updating rho:
+        0: pdhg with penalty |rho-rho^l|^2/2
+        1: pdhg with penalty KL(rho|rho^l)
+    updating_rho_first: if 1, update rho first, otherwise update v first
     f_in_H: [1, nx]
     c_in_H: [1, nx]
     tau: scalar
@@ -162,13 +194,14 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev
     vm_next: [nt-1, nx]
     err: jnp.array([err1, err2,err3])
   '''
-  mp_prev = (rho_prev + c_on_rho) * vp_prev  # [nt-1, nx]
-  mm_prev = (rho_prev + c_on_rho) * vm_prev  # [nt-1, nx]
+  eps = 1e-4
+  mp_prev = (rho_prev + c_on_rho + eps) * vp_prev  # [nt-1, nx]
+  mm_prev = (rho_prev + c_on_rho + eps) * vm_prev  # [nt-1, nx]
   delta_phi_raw = - tau * (A1TransMult_pos(mp_prev, dt, dx) + A1TransMult_neg(mm_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
   delta_phi = delta_phi_raw / dt # [nt, nx]
 
   if if_precondition:
-    phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt)
+    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
@@ -176,32 +209,117 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev
   # extrapolation
   phi_bar = 2 * phi_next - phi_prev
 
-  # update rho
-  vec = A1Mult_pos(phi_bar, dt, dx) * vp_prev + A1Mult_neg(phi_bar, dt, dx) * vm_prev + A2Mult(phi_bar, epsl, dt, dx) # [nt-1, nx]
-  rho_next = jnp.maximum(rho_prev - sigma * vec / dt, -c_on_rho)  # [nt-1, nx]
-  # update vp and vm
-  vp_next_raw = vp_prev - sigma * (rho_next + c_on_rho) * A1Mult_pos(phi_bar, dt, dx) / dt  # [nt-1, nx]
-  vp_next = jnp.maximum(jnp.minimum(vp_next_raw, 0.0), -c_in_H)  # [nt-1, nx]
-  vm_next_raw = vm_prev - sigma * (rho_next + c_on_rho) * A1Mult_neg(phi_bar, dt, dx) / dt  # [nt-1, nx]
-  vm_next = jnp.maximum(jnp.minimum(vm_next_raw, c_in_H), 0.0)  # [nt-1, nx]
+  if updating_rho_first == 1:
+    rho_next = updating_rho(rho_prev, phi_bar, vp_prev, vm_prev, rho_method, sigma, dt, dx, epsl, c_on_rho,
+                            Hstar_plus_fn, Hstar_minus_fn)  # [nt-1, nx]
+    vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_next, v_method, sigma, dt, dx, c_on_rho, 
+                                  Hstar_plus_help_fn, Hstar_minus_help_fn)  # [nt-1, nx]
+  else:
+    vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_prev, v_method, sigma, dt, dx, c_on_rho, 
+                                  Hstar_plus_help_fn, Hstar_minus_help_fn)
+    rho_next = updating_rho(rho_prev, phi_bar, vp_next, vm_next, rho_method, sigma, dt, dx, epsl, c_on_rho,
+                            Hstar_plus_fn, Hstar_minus_fn)
   
   # primal error
-  err1 = jnp.linalg.norm(phi_next - phi_prev)
+  err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
   # err2: dual error
-  err2_rho = jnp.linalg.norm(rho_next - rho_prev)
-  err2_vp = jnp.linalg.norm(vp_next - vp_prev)
-  err2_vm = jnp.linalg.norm(vm_next - vm_prev)
+  err2_rho = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+  err2_vp = jnp.linalg.norm(vp_next - vp_prev) / jnp.maximum(jnp.linalg.norm(vp_prev), 1.0)
+  err2_vm = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
   err2 = jnp.sqrt(err2_rho*err2_rho + err2_vp*err2_vp + err2_vm*err2_vm)
   # err3: equation error
-  HJ_residual = compute_HJ_residual_EO_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H, epsl)
+  HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dx, H_plus_fn, H_minus_fn, epsl)
+  # HJ_residual = compute_HJ_residual_EO_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H, epsl)
   err3 = jnp.mean(jnp.abs(HJ_residual))
   return rho_next, phi_next, vp_next, vm_next, jnp.array([err1, err2,err3])
 
 
-def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
+
+def get_v_from_m(m, rho, c_on_rho, eps=1e-4):
+  m_next_plus = jnp.maximum(m, 0.0)
+  m_next_minus = jnp.minimum(m, 0.0)
+  vp_next = m_next_plus / (rho + c_on_rho + eps)
+  vm_next = jnp.roll(m_next_minus, 1, axis = 1) / (rho + c_on_rho + eps)
+  return vp_next, vm_next
+
+def get_m_from_v(vp, vm, rho, c_on_rho, eps=1e-4):
+  m_prev_plus = (rho + c_on_rho + eps) * vp
+  m_prev_minus = (rho + c_on_rho + eps) * vm
+  m_prev = m_prev_plus + jnp.roll(m_prev_minus, -1, axis = 1) # [nt-1, nx]
+  return m_prev
+
+@partial(jax.jit, static_argnames=("if_precondition", "Hstar_plus_fn", "Hstar_minus_fn", "Hstar_plus_help_fn", "Hstar_minus_help_fn",
+                                   "H_plus_fn", "H_minus_fn"))
+def pdhg_1d_periodic_iter_prev2(Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn,
+                              H_plus_fn, H_minus_fn,
+                              f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
+                              g, dx, dt, c_on_rho, if_precondition, fv, epsl = 0.0):
+  eps = 1e-4
+
+  mp_prev = (rho_prev + c_on_rho + eps) * vp_prev  # [nt-1, nx]
+  mm_prev = (rho_prev + c_on_rho + eps) * vm_prev  # [nt-1, nx]
+  delta_phi_raw = - tau * (A1TransMult_pos(mp_prev, dt, dx) + A1TransMult_neg(mm_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
+  delta_phi = delta_phi_raw / dt # [nt, nx]
+
+  if if_precondition:
+    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
+  else:
+    # no preconditioning
+    phi_next = phi_prev - delta_phi
+
+  # extrapolation
+  phi_bar = 2 * phi_next - phi_prev
+
+  m_prev = get_m_from_v(vp_prev, vm_prev, rho_prev, c_on_rho, eps=eps)
+  rho_candidates = []
+  # the previous version: vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
+  z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
+  z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
+  # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
+  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx) / dt + sigma * f_in_H # [nt-1, nx]
+
+  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
+  # two possible quadratic terms on G, 4 combinations
+  vec3 = -c_in_H * c_in_H * c_on_rho - z * c_in_H
+  vec4 = -c_in_H * c_in_H * c_on_rho + z_left * c_in_H
+  rho_candidates.append(jnp.maximum(alp, - c_on_rho))  # for rho large, G = 0
+  rho_candidates.append(jnp.maximum((alp + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
+  rho_candidates.append(jnp.maximum((alp + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
+  rho_candidates.append(jnp.maximum((alp + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
+  rho_candidates.append(jnp.maximum(-c_on_rho - z / c_in_H, - c_on_rho)) # boundary term 1
+  rho_candidates.append(jnp.maximum(-c_on_rho + z_left / c_in_H, - c_on_rho)) # boundary term 2
+  
+  rho_candidates = jnp.array(rho_candidates) # [7, nt-1, nx]
+  rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z, c_in_H)
+  # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
+  # m_next = jnp.minimum(jnp.maximum(z, -(rho_next + c_on_rho) * c_in_H), 
+  #                       (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
+  # vp_next, vm_next = get_v_from_m(m_next, rho_next, c_on_rho, eps=eps)
+  vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_prev, 2, sigma, dt, dx, c_on_rho, 
+                                Hstar_plus_help_fn, Hstar_minus_help_fn)
+  m_next = get_m_from_v(vp_next, vm_next, rho_next, c_on_rho, eps=eps)
+
+  # primal error
+  err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
+  # err2: dual error
+  err2_rho = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+  err2_m = jnp.linalg.norm(m_next - m_prev) / jnp.maximum(jnp.linalg.norm(m_prev), 1.0)
+  err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m)
+  # err3: equation error
+  HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dx, H_plus_fn, H_minus_fn, epsl)
+  # HJ_residual = compute_HJ_residual_EO_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H, epsl)
+  err3 = jnp.mean(jnp.abs(HJ_residual))
+
+  return rho_next, phi_next, vp_next, vm_next, jnp.array([err1, err2,err3])
+
+
+
+
+def pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
+                                          f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
                                           g, dx, dt, c_on_rho, if_precondition, 
                                           N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                                          epsl = 0.0):
+                                          epsl = 0.0, if_quad=False, if_prev_codes=False):
   '''
   @ parameters:
     f_in_H: [1, nx]
@@ -229,6 +347,31 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, v0, stepsz_par
   vp_prev = v0[0]
   vm_prev = v0[1]
 
+  if if_prev_codes and if_quad:
+    raise ValueError("if_prev_codes and if_quad cannot be both true")
+
+  # define H^*_-, H^*_+, and the help fns
+  # here is the 1d case, i.e., t is either a scalar or with the same dim as x
+  # for H^*_- and H^*_+, ignore the indicator functions (e.g., quad case, the indicator of (-\infty,0] or [0,+\infty))
+  if if_quad:
+    Hstar_minus_fn = lambda p: p **2/2
+    Hstar_plus_fn = lambda p: p **2/2
+    H_plus_fn = lambda x: jnp.maximum(x, 0.0)**2/2
+    H_minus_fn = lambda x: jnp.minimum(x, 0.0)**2/2
+    if v_method == 3:  # gradient of H_- and H_+
+      Hstar_minus_help_fn = lambda x, t: jnp.minimum(x, 0.0)
+      Hstar_plus_help_fn = lambda x, t: jnp.maximum(x, 0.0)
+    else:  # prox pt: the general operator (x,t)\mapsto argmin_y f(y) + |x-y|^2/(2t)
+      Hstar_minus_help_fn = lambda x, t: jnp.minimum(x/(t+1), 0.0)
+      Hstar_plus_help_fn = lambda x, t: jnp.maximum(x/(t+1), 0.0)
+  else:
+    Hstar_minus_fn = lambda p: 0*p - f_in_H/2
+    Hstar_plus_fn = lambda p: 0*p - f_in_H/2
+    H_plus_fn = lambda x: c_in_H * jnp.maximum(x, 0.0) + f_in_H
+    H_minus_fn = lambda x: -c_in_H * jnp.minimum(x, 0.0) + f_in_H
+    Hstar_minus_help_fn = lambda p, t: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H)
+    Hstar_plus_help_fn = lambda p, t: jnp.maximum(jnp.minimum(p, c_in_H), 0.0)
+
   print('epsl: {}'.format(epsl), flush=True)
 
   if if_precondition:
@@ -250,11 +393,19 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, v0, stepsz_par
     fv = None
 
   error_all = []
-
   results_all = []
   for i in range(N_maxiter):
-    rho_next, phi_next, vp_next, vm_next, error = pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
-                                                                           g, dx, dt, c_on_rho, if_precondition, fv, epsl)
+    if if_prev_codes:
+      rho_next, phi_next, vp_next, vm_next, error = pdhg_1d_periodic_iter_prev2(Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn, 
+                                                                          H_plus_fn, H_minus_fn,
+                                                                          f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
+                                                                          g, dx, dt, c_on_rho, if_precondition, fv, epsl)
+    else:
+      rho_next, phi_next, vp_next, vm_next, error = pdhg_1d_periodic_iter(v_method, rho_method, updating_rho_first,
+                                                                        Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn,
+                                                                        H_plus_fn, H_minus_fn,
+                                                                        f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
+                                                                        g, dx, dt, c_on_rho, if_precondition, fv, epsl)
     error_all.append(error)
     if error[2] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
@@ -266,37 +417,76 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, v0, stepsz_par
       results_all.append((i, [vp_next, vm_next], rho_prev, [], phi_prev))
       print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
-    if i % 1 == 0:
-      # plot phi, rho, vp, vm
-      plt.figure()
-      plt.contourf(phi_next)
-      plt.colorbar()
-      plt.savefig('phi_iter{}.png'.format(i))
-      plt.close()
-      plt.figure()
-      plt.contourf(rho_next)
-      plt.colorbar()
-      plt.savefig('rho_iter{}.png'.format(i))
-      plt.close()
-      plt.figure()
-      plt.contourf(vp_next)
-      plt.colorbar()
-      plt.savefig('vp_iter{}.png'.format(i))
-      plt.close()
-      plt.figure()
-      plt.contourf(vm_next)
-      plt.colorbar()
-      plt.savefig('vm_iter{}.png'.format(i))
-      plt.close()
-
-
-    
+      print('vm max {:.3E}, vm min {:.3E}, vp max {:.3E}, vp min {:.3E}'.format(jnp.max(vm_next), jnp.min(vm_next), jnp.max(vp_next), jnp.min(vp_next)), flush = True)
     rho_prev = rho_next
     phi_prev = phi_next
     vp_prev = vp_next
     vm_prev = vm_next
   
   # print the final error
-  print('iteration {}, primal error with prev step {}, dual error with prev step {}, eqt error {}'.format(i, error[0],  error[1],  error[2]), flush = True)
+  print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
   results_all.append((i+1, [vp_next, vm_next], rho_next, [], phi_next))
   return results_all, jnp.array(error_all)
+
+
+
+
+def main(argv):
+  from solver import set_up_example_fns
+  v_method = FLAGS.v_method
+  rho_method = FLAGS.rho_method
+  updating_rho_first = FLAGS.updating_rho_first
+  egno = FLAGS.egno
+  stepsz_param = FLAGS.stepsz_param
+  c_on_rho = FLAGS.c_on_rho
+  if_prev_codes = FLAGS.if_prev_codes
+
+  if egno == 10:
+    if_quad = True
+  else:
+    if_quad = False
+
+  T = 1
+  x_period, y_period = 2, 2
+  nx = 20
+  nt = 11
+  if_precondition = True
+  print_freq = 100
+
+  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
+
+  dx = x_period / (nx)
+  dt = T / (nt-1)
+  spatial_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
+  g = J(spatial_arr)  # [1, nx]
+  f_in_H = f_in_H_fn(spatial_arr)  # [1, nx]
+  c_in_H = c_in_H_fn(spatial_arr)  # [1, nx]
+
+  phi0 = einshape("i...->(ki)...", g, k=nt)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
+  rho0 = jnp.zeros([nt-1, nx])
+  vp0 = jnp.zeros([nt-1, nx])
+  vm0 = jnp.zeros([nt-1, nx])
+  v0 = [vp0, vm0]
+
+  N_maxiter = 10000
+  utils.timer.tic('method 2 with 2 var')
+  pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
+                                          f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
+                                          g, dx, dt, c_on_rho, if_precondition, 
+                                          N_maxiter = N_maxiter, print_freq = print_freq, eps = 1e-6,
+                                          epsl = 0.0, if_quad=if_quad, if_prev_codes=if_prev_codes)
+  utils.timer.toc('method 2 with 2 var')
+
+
+if __name__ == '__main__':
+  from absl import app, flags, logging
+  FLAGS = flags.FLAGS
+  flags.DEFINE_integer('egno', 0, 'index of example')
+  flags.DEFINE_boolean('if_prev_codes', True, 'to use prev codes or not')
+  flags.DEFINE_float('stepsz_param', 0.9, 'default step size constant')
+  flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
+
+  flags.DEFINE_integer('v_method', 1, 'method for v')
+  flags.DEFINE_integer('rho_method', 1, 'method for rho')
+  flags.DEFINE_integer('updating_rho_first', 1, '1 if update rho first')
+  app.run(main)

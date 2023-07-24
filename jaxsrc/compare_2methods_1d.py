@@ -13,7 +13,7 @@ import pytz
 from datetime import datetime
 import os
 import save_analysis
-from print_n_plot import get_save_dir
+from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d, compute_ground_truth
 
 
 def method1_3var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 
@@ -56,17 +56,23 @@ def method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_r
     rho0 = results[-1][-3]
     phi0 = results[-1][-1]
   utils.timer.toc('method 1 with 2 var')
+  m = results[-1][1]
+  rho = results[-1][-3]
+  phi = results[-1][-1]
+  return phi, rho, m
 
 
-def method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 
-                    f_in_H, c_in_H, phi0, rho0, v0, g, dx, dt, save_dir, filename_prefix):
+def method2_2var(v_method, rho_method, updating_rho_first,
+                  rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 
+                  f_in_H, c_in_H, phi0, rho0, v0, g, dx, dt, save_dir, filename_prefix):
   save_dir = save_dir + '/method2_2var'
   utils.timer.tic('method 2 with 2 var')
   iter_no = 0
   for i in range(rept_num):
-    results, errors = pdhg_method2_2var(f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
-                                        g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps,
-                                        epsl = epsl)
+    results, errors = pdhg_method2_2var(v_method, rho_method, updating_rho_first,
+                                        f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
+                                        g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, 
+                                        print_freq = 10, eps = eps, epsl = epsl)
     iter_no += results[-1][0]
     if ifsave:
       filename = filename_prefix + '_iter{}'.format(iter_no)
@@ -77,6 +83,7 @@ def method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_r
     rho0 = results[-1][-3]
     phi0 = results[-1][-1]
   utils.timer.toc('method 2 with 2 var')
+  
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -91,7 +98,7 @@ def main(argv):
   c_on_rho = FLAGS.c_on_rho
   epsl = FLAGS.epsl
 
-  N_maxiter = 10 # 1000000
+  N_maxiter = 1000 # 1000000
   rept_num = 1 # 10  # repeat running iterations this many times
   eps = 1e-6
   T = 1
@@ -110,6 +117,20 @@ def main(argv):
   rho0 = jnp.zeros([nt-1, nx])
   m0 = jnp.zeros([nt-1, nx])
   mu0 = jnp.zeros([1, nx])
+  vp0 = jnp.zeros([nt-1, nx])
+  vm0 = jnp.zeros([nt-1, nx])
+  v0 = [vp0, vm0]
+
+  # put true solution for testing
+  phi_dense = compute_ground_truth(egno, 1, T, x_period, y_period)
+  phi0 = get_sol_on_coarse_grid_1d(phi_dense, nt, nx)
+  # vp0 = jnp.zeros([nt-1, nx])
+  # vm0 = jnp.zeros([nt-1, nx])
+  v = (jnp.roll(phi0, -1, axis=1) - jnp.roll(phi0, 1, axis=1)) / (2 * dx)
+  v = v[1:,:]
+  vm0 = jnp.maximum(v, 0)
+  vp0 = jnp.minimum(v, 0)
+  v0 = [vp0, vm0]
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
   logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
@@ -119,18 +140,26 @@ def main(argv):
   print("nt = {}, nx = {}".format(nt, nx))
   print("shape g {}, f {}, c {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
 
-  # method 2 with 2 vars
-  vp0 = jnp.zeros([nt-1, nx])
-  vm0 = jnp.zeros([nt-1, nx])
-  v0 = [vp0, vm0]
+  # # use results from method 1 as initialization for method 2
+  # # method 1 with 2 vars
+  # print('===================== method 1 with 2 vars =====================')
+  # N_maxiter = 100000
+  # phi0, rho0, m0 = method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param,
+  #               f_in_H, c_in_H, phi0, rho0, m0, g, dx, dt, save_dir, filename_prefix)
+  
+  # # method 2 with 2 vars
+  # vp0 = jnp.minimum(m0, 0) / (rho0 + c_on_rho + eps)
+  # vm0 = jnp.maximum(m0, 0) / (rho0 + c_on_rho + eps)
+  # vm0 = jnp.roll(vm0, -1, axis=1)
+  # v0 = [vp0, vm0]
+  N_maxiter = 10000
+  v_method, rho_method, updating_rho_first = FLAGS.v_method, FLAGS.rho_method, FLAGS.updating_rho_first
   print('===================== method 2 with 2 vars =====================')
-  method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param,
+  method2_2var(v_method, rho_method, updating_rho_first,
+                rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param,
                 f_in_H, c_in_H, phi0, rho0, v0, g, dx, dt, save_dir, filename_prefix)
 
-#   # method 1 with 2 vars
-#   print('===================== method 1 with 2 vars =====================')
-#   method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param,
-#                 f_in_H, c_in_H, phi0, rho0, m0, g, dx, dt, save_dir, filename_prefix)
+
   
   # # method 1 with 3 vars
   # print('===================== method 1 with 3 vars =====================')
@@ -152,5 +181,9 @@ if __name__ == '__main__':
   flags.DEFINE_boolean('if_precondition', True, 'if use preconditioning')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
-  
+
+  flags.DEFINE_integer('v_method', 1, 'method for v')
+  flags.DEFINE_integer('rho_method', 1, 'method for rho')
+  flags.DEFINE_integer('updating_rho_first', 1, '1 if update rho first')
+
   app.run(main)
