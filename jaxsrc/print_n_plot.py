@@ -35,6 +35,7 @@ def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g):
         nt: integers
         dx, dt: floats
         f_in_H, c_in_H, g: [nx]
+        g: [nx]
     @return:
         phi: [nt, nx]
     '''
@@ -46,7 +47,7 @@ def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g):
         H_1norm = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
         H_val = c_in_H * H_1norm + f_in_H
         phi.append(phi[i] - dt * H_val)
-    phi_arr = jnp.array(phi)
+    phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
     print("phi {}".format(phi_arr))
     return phi_arr  # TODO: check dimension
@@ -221,14 +222,14 @@ def compute_ground_truth(egno, ndim, T, x_period, y_period):
         f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
         c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
         print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        if egno == 1 or egno == 2:
-            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
-        elif egno == 0:
+        if egno == 0:
             t_arr_1d = jnp.linspace(0.0, T, num = nt_dense)  # [nt_dense]
             phi_dense_list = []
             for i in range(nt_dense):
                 phi_dense_list.append(H_L1_true_sol_1d_batch(x_arr_1d, t_arr_1d[i] + jnp.zeros(nx_dense), J))
             phi_dense = jnp.stack(phi_dense_list, axis = 0)
+        else:
+            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
     elif ndim == 2:
         x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
         y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
