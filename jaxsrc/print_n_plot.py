@@ -29,13 +29,14 @@ H_L1_true_sol_1d_batch = partial(jax.jit, static_argnums=(2))(jax.vmap(H_L1_true
 H_L1_true_sol_1d_batch2 = jax.vmap(H_L1_true_sol_1d_batch, in_axes=(0, 0, None), out_axes=0)
 
 # @jax.jit
-def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g):
+def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g, epsl = 0.0):
     '''
     @parameters:
         nt: integers
         dx, dt: floats
         f_in_H, c_in_H, g: [nx]
         g: [nx]
+        epsl: float, diffusion coefficient
     @return:
         phi: [nt, nx]
     '''
@@ -46,18 +47,20 @@ def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g):
         dphidx_right = (jnp.roll(phi[i], -1) - phi[i])/dx
         H_1norm = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
         H_val = c_in_H * H_1norm + f_in_H
-        phi.append(phi[i] - dt * H_val)
+        diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2) / 2
+        phi.append(phi[i] - dt * H_val - dt * diffusion)
     phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
     print("phi {}".format(phi_arr))
     return phi_arr  # TODO: check dimension
     
-def compute_EO_forward_solution_2d(nt, dx, dy, dt, f_in_H, c_in_H, g):
+def compute_EO_forward_solution_2d(nt, dx, dy, dt, f_in_H, c_in_H, g, epsl=0.0):
     '''
     @parameters:
         nt: integers
         dx, dy, dt: floats
         f_in_H, c_in_H, g: [nx, ny]
+        epsl: float, diffusion coefficient
     @return:
         phi: [nt, nx, ny]
     '''
@@ -71,7 +74,9 @@ def compute_EO_forward_solution_2d(nt, dx, dy, dt, f_in_H, c_in_H, g):
         H_1norm = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0) \
                     + jnp.maximum(-dphidy_right, 0) + jnp.maximum(dphidy_left, 0)  # [nx, ny]
         H_val = c_in_H * H_1norm + f_in_H  # [nx, ny]
-        phi.append(phi[i] - dt * H_val)
+        diffusion = epsl * (jnp.roll(phi[i], -1, axis = 0) - 2 * phi[i] + jnp.roll(phi[i], 1, axis = 0)) / (dx**2) / 2 \
+                    + epsl * (jnp.roll(phi[i], -1, axis = 1) - 2 * phi[i] + jnp.roll(phi[i], 1, axis = 1)) / (dy**2) / 2
+        phi.append(phi[i] - dt * H_val - dt * diffusion)
     phi_arr = jnp.array(phi)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
     return phi_arr  # TODO: check dimension
@@ -207,7 +212,7 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
     filename_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
   return save_dir, filename_prefix
 
-def compute_ground_truth(egno, ndim, T, x_period, y_period):
+def compute_ground_truth(egno, ndim, T, x_period, y_period, epsl = 0.0):
     J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
     nt_dense = 16001
     nx_dense = 8000
@@ -222,14 +227,14 @@ def compute_ground_truth(egno, ndim, T, x_period, y_period):
         f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
         c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
         print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        if egno == 0:
+        if egno == 0 and epsl == 0.0:
             t_arr_1d = jnp.linspace(0.0, T, num = nt_dense)  # [nt_dense]
             phi_dense_list = []
             for i in range(nt_dense):
                 phi_dense_list.append(H_L1_true_sol_1d_batch(x_arr_1d, t_arr_1d[i] + jnp.zeros(nx_dense), J))
             phi_dense = jnp.stack(phi_dense_list, axis = 0)
         else:
-            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g)
+            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
     elif ndim == 2:
         x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
         y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
@@ -239,7 +244,7 @@ def compute_ground_truth(egno, ndim, T, x_period, y_period):
         f_in_H = f_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
         c_in_H = c_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
         print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        phi_dense = compute_EO_forward_solution_2d(nt_dense, dx_dense, dy_dense, dt_dense, f_in_H, c_in_H, g)
+        phi_dense = compute_EO_forward_solution_2d(nt_dense, dx_dense, dy_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
     else:
         raise ValueError("ndim should be 1 or 2")
     return phi_dense
@@ -250,6 +255,7 @@ def main(argv):
     ny = FLAGS.ny
     ndim = FLAGS.ndim
     egno = FLAGS.egno
+    epsl = FLAGS.epsl
 
     T = 1.0
     x_period = 2.0
@@ -264,7 +270,7 @@ def main(argv):
     # filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
     filename = FLAGS.filename
     phi = read_solution(filename)
-    phi_dense = compute_ground_truth(egno, ndim, T, x_period, y_period)
+    phi_dense = compute_ground_truth(egno, ndim, T, x_period, y_period, epsl=epsl)
 
     # compute error
     if ndim == 1:        
@@ -286,6 +292,8 @@ if __name__ == "__main__":
     # flags.DEFINE_integer('iterno', 100000, 'iteration number in filename')
     # flags.DEFINE_string('time_stamp', '', 'time stamp in the filename')
     flags.DEFINE_string('filename', '', 'the name of the pickle file to read')
+    flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
+    
     app.run(main)
 
     
