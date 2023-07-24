@@ -192,7 +192,10 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   else:
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
-  J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
+  if egno == 3:
+    J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
+  else:
+    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
 
   if egno == 1:
     # example 1
@@ -207,8 +210,10 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
   elif egno == 3:  # combine 1 and 2
     # f_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-    f_in_H_fn = lambda x: jnp.sum((x-1)**2/2, axis = -1)
+    # f_in_H_fn = lambda x: jnp.sum((x-1)**2/2, axis = -1)
+    f_in_H_fn = lambda x: jnp.sum(jnp.sin(alpha * x + 0.3), axis = -1) 
     c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
+
   elif egno == 10:  # quad case, no f and c
     f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
