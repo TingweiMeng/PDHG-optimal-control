@@ -254,7 +254,7 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, stepsz_par
   phi_prev = phi0
   rho_prev = rho0
   m_prev = m0
-  c_max = 500
+  c_max = 50 * c_on_rho
   delta_c = 50
 
   print('epsl: {}'.format(epsl), flush=True)
