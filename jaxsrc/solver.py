@@ -70,9 +70,10 @@ def Poisson_eqt_solver(source_term, fv, dt, Neumann_cond = True):
 
 
 @partial(jax.jit, static_argnames=("Neumann_cond",))
-def pdhg_phi_update(source_term, phi_prev, fv, dt, Neumann_cond = True, reg_param = 0.0, reg_param2 = 0.0):
-  ''' this solves (D_{tt} + D_{xx}) (u-u_prev) - reg_param * u + reg_param2 * (D_{tt} + D_{xx}) * u = source_term
-      i.e., ((1+reg_param2)(D_{tt} + D_{xx}) - reg_param) u = source_term + (D_{tt} + D_{xx}) * u_prev
+def pdhg_phi_update(source_term, phi_prev, fv, dt, Neumann_cond = True, reg_param = 0.0, reg_param2 = 0.0, f=0.0):
+  ''' this solves (D_{tt} + D_{xx}) (u-u_prev) - reg_param * u -f + reg_param2 * (D_{tt} + D_{xx}) * u = source_term
+      i.e., ((1+reg_param2)(D_{tt} + D_{xx}) - reg_param) u = source_term + (D_{tt} + D_{xx}) * u_prev + f,
+      where f can be a number or [nt-1, nx] array
   if Neumann_cond is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
   @parameters:
     source_term: [nt, nx]
@@ -85,6 +86,11 @@ def pdhg_phi_update(source_term, phi_prev, fv, dt, Neumann_cond = True, reg_para
     phi_update: [nt, nx]
   '''
   nt, nx = jnp.shape(source_term)
+  if jnp.isscalar(f):
+    f = jnp.ones((nt-1, nx)) * f
+  elif jnp.shape(f) == (1,nx):
+    f = jnp.ones((nt-1, nx)) * f
+  f_Fourier = jnp.fft.fft(f, axis = 1)  # [nt-1, nx]
   # exclude the first row wrt t
   v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
   dl = (1+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
@@ -100,7 +106,7 @@ def pdhg_phi_update(source_term, phi_prev, fv, dt, Neumann_cond = True, reg_para
   rhs = v_Fourier + fv[None,:] * phi_prev_Fourier + Lap_t_diag_rep * phi_prev_Fourier # [nt-1, nx]
   rhs1 = rhs + jnp.pad(phi_prev_Fourier[:-1,:] / (dt*dt), ((1,0), (0,0)))
   rhs2 = rhs1 + jnp.pad(phi_prev_Fourier[1:,:] / (dt*dt), ((0,1), (0,0)))
-  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, rhs2) # [nt-1, nx]
+  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, rhs2 + f_Fourier) # [nt-1, nx]
   F_phi_next = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
   phi_next = jnp.concatenate([phi_prev[0:1,:], F_phi_next], axis = 0)
   return phi_next
