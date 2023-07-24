@@ -7,7 +7,7 @@ from pdhg2d import pdhg_2d_periodic_rho_m_EO_L1_xdep, get_initialization_2d
 import numpy as np
 from absl import app, flags, logging
 import pickle
-from solver import set_up_example
+from solver import set_up_example_fns
 import pytz
 from datetime import datetime
 import os
@@ -43,7 +43,7 @@ def main(argv):
   T = 1
   x_period, y_period = 2, 2
 
-  J, f_in_H_fn, c_in_H_fn, filename = set_up_example(egno, ndim, nt, nx, ny, x_period, y_period)
+  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, nt, nx, ny, x_period, y_period)
 
   dx = x_period / (nx)
   dy = y_period / (ny)

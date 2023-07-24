@@ -120,29 +120,29 @@ def get_minimizer_ind(rho_candidates, shift_term, c, z, c_in_H):
   return rho_min[0,:,:]
 
 
-def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
-  ''' this solves -(D_{tt} + D_{xx}) phi = delta_phi with zero Dirichlet at t=0 and 0 Neumann at t=T
-  @parameters:
-    delta_phi: [nt, nx]
-    phi_prev: [nt, nx]
-    fv: [nx], complex, this is FFT of neg Laplacian -Dxx
-    dt: scalar
-  @return:
-    phi_next: [nt, nx]
-  '''
-  nt, nx = jnp.shape(delta_phi)
-  # exclude the first row wrt t
-  v_Fourier =  jnp.fft.fft(delta_phi[1:,:], axis = 1)  # [nt, nx]
-  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  neg_Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
-  neg_Lap_t_diag_rep = einshape('n->nm', neg_Lap_t_diag, m = nx)  # [nt-1, nx]
-  thomas_b = einshape('n->mn', fv, m = nt-1) + neg_Lap_t_diag_rep # [nt-1, nx]
+# def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
+#   ''' this solves -(D_{tt} + D_{xx}) phi = delta_phi with zero Dirichlet at t=0 and 0 Neumann at t=T
+#   @parameters:
+#     delta_phi: [nt, nx]
+#     phi_prev: [nt, nx]
+#     fv: [nx], complex, this is FFT of neg Laplacian -Dxx
+#     dt: scalar
+#   @return:
+#     phi_next: [nt, nx]
+#   '''
+#   nt, nx = jnp.shape(delta_phi)
+#   # exclude the first row wrt t
+#   v_Fourier =  jnp.fft.fft(delta_phi[1:,:], axis = 1)  # [nt, nx]
+#   dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+#   du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+#   neg_Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
+#   neg_Lap_t_diag_rep = einshape('n->nm', neg_Lap_t_diag, m = nx)  # [nt-1, nx]
+#   thomas_b = einshape('n->mn', fv, m = nt-1) + neg_Lap_t_diag_rep # [nt-1, nx]
   
-  phi_fouir_part = solver.tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) # [nt-1, nx]
-  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
-  phi_next = phi_prev + jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
-  return phi_next
+#   phi_fouir_part = solver.tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) # [nt-1, nx]
+#   F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
+#   phi_next = phi_prev + jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
+#   return phi_next
 
 @partial(jax.jit, static_argnames=("if_precondition",))
 def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev,
@@ -175,7 +175,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
   delta_phi = delta_phi_raw / dt # [nt, nx]
 
   if if_precondition:
-    phi_next = update_phi_preconditioning(delta_phi, phi_prev, fv, dt)
+    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
@@ -208,10 +208,10 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
                         (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
 
   # primal error
-  err1 = jnp.linalg.norm(phi_next - phi_prev)
+  err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
   # err2: dual error
-  err2_rho = jnp.linalg.norm(rho_next - rho_prev)
-  err2_m = jnp.linalg.norm(m_next - m_prev)
+  err2_rho = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+  err2_m = jnp.linalg.norm(m_next - m_prev) / jnp.maximum(jnp.linalg.norm(m_prev), 1.0)
   err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m)
   # err3: equation error
   HJ_residual = compute_HJ_residual_EO_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H, epsl)

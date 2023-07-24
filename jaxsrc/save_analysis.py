@@ -23,6 +23,25 @@ def compute_HJ_residual_EO_1d_xdep(phi, dt, dx, f_in_H, c_in_H, epsl):
   HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val[1:,:] - epsl * Lap[1:,:]
   return HJ_residual
 
+def compute_HJ_residual_EO_1d_general(phi, dt, dx, H_plus, H_minus, epsl):
+  '''
+  H is c*|p| + f, 1-dimensional
+  @parameters:
+    phi: [nt, nx]
+    dt: scalar
+    dx: scalar
+    H_plus, H_minus: functions taking [nt, nx] and returning [nt, nx]
+    epsl: scalar, diffusion coefficient
+  @ return:
+    HJ_residual: [nt-1, nx]
+  '''
+  dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
+  dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
+  H_val = H_plus(dphidx_left) + H_minus(dphidx_right)
+  Lap = (dphidx_right - dphidx_left)/dx
+  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val[1:,:] - epsl * Lap[1:,:]
+  return HJ_residual
+
 def compute_HJ_residual_EO_2d_xdep(phi, dt, dx, dy, f_in_H, c_in_H, epsl):
   '''
   H is c*|p| + f, 2-dimensional

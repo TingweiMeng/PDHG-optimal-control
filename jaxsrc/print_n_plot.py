@@ -272,7 +272,7 @@ def main(argv):
     elif ndim == 2:
         err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
         plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname)
-    print("err_l1 {}, err_l1_rel {}".format(err_l1, err_l1_rel))
+    print("err_l1 {:.2E}, err_l1_rel {:.2E}".format(err_l1, err_l1_rel))
     
 
 if __name__ == "__main__":
