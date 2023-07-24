@@ -254,6 +254,8 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, stepsz_par
   phi_prev = phi0
   rho_prev = rho0
   m_prev = m0
+  c_max = 500
+  delta_c = 50
 
   print('epsl: {}'.format(epsl), flush=True)
 
@@ -288,10 +290,17 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, stepsz_par
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
       print("Nan error at iter {}".format(i))
       break
+
+    if jnp.min(rho_next) < -c_on_rho + eps and c_on_rho < c_max:
+      print('increase c value from {} to {}'.format(c_on_rho, c_on_rho + delta_c), flush = True)
+      c_on_rho += delta_c
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, m_prev, rho_prev, [], phi_prev))
       print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
+      # if error[0] < eps and error[1] < eps and error[2] > eps and c_on_rho < c_max:
+      #   print('increase c value from {} to {}'.format(c_on_rho, c_on_rho + delta_c), flush = True)
+      #   c_on_rho += delta_c
     
     rho_prev = rho_next
     phi_prev = phi_next
