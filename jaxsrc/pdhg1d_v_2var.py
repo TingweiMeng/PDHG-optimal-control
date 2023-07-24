@@ -262,7 +262,14 @@ def pdhg_1d_periodic_iter_prev2(Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_f
   delta_phi = delta_phi_raw / dt # [nt, nx]
 
   if if_precondition:
-    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
+    reg_param = 10
+    reg_param2 = 0
+    f = -2*reg_param *phi_prev[0:1,:]
+    phi_next = solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, 
+                                      reg_param = reg_param, reg_param2=reg_param2, f=f)
+    
+    # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
+    # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
@@ -482,11 +489,11 @@ if __name__ == '__main__':
   from absl import app, flags, logging
   FLAGS = flags.FLAGS
   flags.DEFINE_integer('egno', 0, 'index of example')
-  flags.DEFINE_boolean('if_prev_codes', True, 'to use prev codes or not')
-  flags.DEFINE_float('stepsz_param', 0.9, 'default step size constant')
+  flags.DEFINE_boolean('if_prev_codes', False, 'to use prev codes or not')
+  flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
 
   flags.DEFINE_integer('v_method', 1, 'method for v')
-  flags.DEFINE_integer('rho_method', 1, 'method for rho')
+  flags.DEFINE_integer('rho_method', 0, 'method for rho')
   flags.DEFINE_integer('updating_rho_first', 1, '1 if update rho first')
   app.run(main)

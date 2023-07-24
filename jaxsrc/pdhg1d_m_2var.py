@@ -176,7 +176,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
 
   if if_precondition:
     # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
-    reg_param = 100
+    reg_param = 10
     reg_param2 = 0
     f = -2*reg_param *phi_prev[0:1,:]
     # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
