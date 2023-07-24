@@ -209,16 +209,29 @@ def pdhg_1d_periodic_iter(v_method, rho_method, updating_rho_first,
   # extrapolation
   phi_bar = 2 * phi_next - phi_prev
 
-  if updating_rho_first == 1:
-    rho_next = updating_rho(rho_prev, phi_bar, vp_prev, vm_prev, rho_method, sigma, dt, dx, epsl, c_on_rho,
+  rho_v_iters = 10
+
+  rho_prev0 = rho_prev
+  vp_prev0 = vp_prev
+  vm_prev0 = vm_prev
+  if updating_rho_first == 1: 
+    for j in range(rho_v_iters):
+      rho_next = updating_rho(rho_prev0, phi_bar, vp_prev0, vm_prev0, rho_method, sigma, dt, dx, epsl, c_on_rho,
                             Hstar_plus_fn, Hstar_minus_fn)  # [nt-1, nx]
-    vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_next, v_method, sigma, dt, dx, c_on_rho, 
+      vp_next, vm_next = updating_v(vp_prev0, vm_prev0, phi_bar, rho_next, v_method, sigma, dt, dx, c_on_rho, 
                                   Hstar_plus_help_fn, Hstar_minus_help_fn)  # [nt-1, nx]
+      rho_prev0 = rho_next
+      vp_prev0 = vp_next
+      vm_prev0 = vm_next
   else:
-    vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_prev, v_method, sigma, dt, dx, c_on_rho, 
+    for j in range(rho_v_iters):
+      vp_next, vm_next = updating_v(vp_prev0, vm_prev0, phi_bar, rho_prev0, v_method, sigma, dt, dx, c_on_rho, 
                                   Hstar_plus_help_fn, Hstar_minus_help_fn)
-    rho_next = updating_rho(rho_prev, phi_bar, vp_next, vm_next, rho_method, sigma, dt, dx, epsl, c_on_rho,
+      rho_next = updating_rho(rho_prev0, phi_bar, vp_next, vm_next, rho_method, sigma, dt, dx, epsl, c_on_rho,
                             Hstar_plus_fn, Hstar_minus_fn)
+      rho_prev0 = rho_next
+      vp_prev0 = vp_next
+      vm_prev0 = vm_next
   
   # primal error
   err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
@@ -436,29 +449,75 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
   return results_all, jnp.array(error_all)
 
 
+def PDHG_multi_step(egno, f_in_H, c_in_H, stepsz_param, nt, nx,
+                    g, dx, dt, c_on_rho, epsl = 0.0, time_step_per_PDHG = 2):
+  if_precondition = True
+  ifsave = False
+  rho_method = 0
+  v_method = 2
+  updating_rho_first = 0
 
+  assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
+  nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
+  
+  phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
+  rho0 = jnp.zeros([time_step_per_PDHG-1, nx])
+  vp0 = jnp.zeros([time_step_per_PDHG-1, nx])
+  vm0 = jnp.zeros([time_step_per_PDHG-1, nx])
+  v0 = [vp0, vm0]
 
-def main(argv):
-  from solver import set_up_example_fns
-  v_method = FLAGS.v_method
-  rho_method = FLAGS.rho_method
-  updating_rho_first = FLAGS.updating_rho_first
-  egno = FLAGS.egno
-  stepsz_param = FLAGS.stepsz_param
-  c_on_rho = FLAGS.c_on_rho
-  if_prev_codes = FLAGS.if_prev_codes
+  N_maxiter = 10000
+  print_freq = 100
 
   if egno == 10:
     if_quad = True
   else:
     if_quad = False
 
+  # use results from method 1 as initialization for method 2
+  # method 1 with 2 vars
+  phi_all = []
+  rho_all = []
+  vp_all = []
+  vm_all = []
+  for i in range(nt_PDHG):
+    print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
+    results_all, _ = pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
+                                          f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
+                                          g, dx, dt, c_on_rho, if_precondition, 
+                                          N_maxiter = N_maxiter, print_freq = print_freq, eps = 1e-6,
+                                          epsl = epsl, if_quad=if_quad, if_prev_codes=False)
+    _, v_curr, rho_curr, _, phi_curr = results_all[-1]
+    if i < nt_PDHG-1:
+      phi_all.append(phi_curr[:-1,:])
+      rho_all.append(rho_curr[:-1,:])
+      vp_all.append(v_curr[0][:-1,:])
+      vm_all.append(v_curr[1][:-1,:])
+    else:
+      phi_all.append(phi_curr)
+      rho_all.append(rho_curr)
+      vp_all.append(v_curr[0])
+      vm_all.append(v_curr[1])
+    g_diff = phi_curr[-1:,:] - phi0[0:1,:]
+    phi0 = phi0 + g_diff
+    rho0 = rho_curr
+    v0 = v_curr
+  phi_all = jnp.concatenate(phi_all, axis = 0)
+  rho_all = jnp.concatenate(rho_all, axis = 0)
+  vp_all = jnp.concatenate(vp_all, axis = 0)
+  vm_all = jnp.concatenate(vm_all, axis = 0)
+
+
+def main(argv):
+  from solver import set_up_example_fns
+  egno = FLAGS.egno
+  stepsz_param = FLAGS.stepsz_param
+  c_on_rho = FLAGS.c_on_rho
+
   T = 1
   x_period, y_period = 2, 2
   nx = 20
   nt = 11
-  if_precondition = True
-  print_freq = 100
 
   J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
 
@@ -469,31 +528,15 @@ def main(argv):
   f_in_H = f_in_H_fn(spatial_arr)  # [1, nx]
   c_in_H = c_in_H_fn(spatial_arr)  # [1, nx]
 
-  phi0 = einshape("i...->(ki)...", g, k=nt)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
-  rho0 = jnp.zeros([nt-1, nx])
-  vp0 = jnp.zeros([nt-1, nx])
-  vm0 = jnp.zeros([nt-1, nx])
-  v0 = [vp0, vm0]
-
-  N_maxiter = 10000
-  utils.timer.tic('method 2 with 2 var')
-  pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
-                                          f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
-                                          g, dx, dt, c_on_rho, if_precondition, 
-                                          N_maxiter = N_maxiter, print_freq = print_freq, eps = 1e-6,
-                                          epsl = 0.0, if_quad=if_quad, if_prev_codes=if_prev_codes)
-  utils.timer.toc('method 2 with 2 var')
+  PDHG_multi_step(egno, f_in_H, c_in_H, stepsz_param, nt, nx,
+                    g, dx, dt, c_on_rho, epsl = 0.0, time_step_per_PDHG = 2)
 
 
 if __name__ == '__main__':
   from absl import app, flags, logging
   FLAGS = flags.FLAGS
   flags.DEFINE_integer('egno', 0, 'index of example')
-  flags.DEFINE_boolean('if_prev_codes', False, 'to use prev codes or not')
   flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
 
-  flags.DEFINE_integer('v_method', 1, 'method for v')
-  flags.DEFINE_integer('rho_method', 0, 'method for rho')
-  flags.DEFINE_integer('updating_rho_first', 1, '1 if update rho first')
   app.run(main)
