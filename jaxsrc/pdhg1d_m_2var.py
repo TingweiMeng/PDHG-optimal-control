@@ -176,8 +176,10 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
 
   if if_precondition:
     # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
-    reg_param = -0.5
-    phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
+    reg_param = 0.5
+    reg_param2 = 0.5
+    # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
+    phi_next = solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param, reg_param2=reg_param2)
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
