@@ -161,6 +161,10 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   elif egno == 0:  # x-indep case
     f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 3:  # combine 1 and 2
+    # f_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
+    f_in_H_fn = lambda x: jnp.sum((x-1)**2/2, axis = -1)
+    c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
   elif egno == 10:  # quad case, no f and c
     f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
@@ -171,18 +175,54 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
 
 
 if __name__ == "__main__":
-  n = 20
-  dl = jnp.array([0.0] + [0.1] * (n-1)).astype(jnp.complex128)
-  du = jnp.array([0.1] * (n-1) + [0.0]).astype(jnp.complex128)
-  d = jnp.ones((n,)).astype(jnp.complex128)
-  b = 0.1 * jnp.arange(n).astype(jnp.complex128) 
-  out = tridiagonal_solve(dl, d, du, b)
-  print(out.shape, out)
+  # n = 20
+  # dl = jnp.array([0.0] + [0.1] * (n-1)).astype(jnp.complex128)
+  # du = jnp.array([0.1] * (n-1) + [0.0]).astype(jnp.complex128)
+  # d = jnp.ones((n,)).astype(jnp.complex128)
+  # b = 0.1 * jnp.arange(n).astype(jnp.complex128) 
+  # out = tridiagonal_solve(dl, d, du, b)
+  # print(out.shape, out)
 
-  print('=======')
-  bs = 3
-  d = jnp.ones((n, bs)).astype(jnp.complex128)
-  b = jax.random.uniform(jax.random.PRNGKey(1), shape = (n, bs)).astype(jnp.complex128)
-  out = tridiagonal_solve_batch(dl, d, du, b)
-  print(out.shape, out)
-  
+  # print('=======')
+  # bs = 3
+  # d = jnp.ones((n, bs)).astype(jnp.complex128)
+  # b = jax.random.uniform(jax.random.PRNGKey(1), shape = (n, bs)).astype(jnp.complex128)
+  # out = tridiagonal_solve_batch(dl, d, du, b)
+  # print(out.shape, out)
+  # 
+
+  import matplotlib.pyplot as plt
+  import numpy as np
+  from print_n_plot import compute_EO_forward_solution_1d
+
+  x_period, y_period = 2, 2
+  T = 1
+  nx = 101
+  nt = 201
+  egno = 3
+  x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)  # [nx+1]
+  t_arr = np.linspace(0.0, T, num = nt, endpoint = True)  # [nt]
+
+  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
+
+  dx = x_period / (nx)
+  dt = T / (nt-1)
+  x_input = x_arr[:-1, None]  # [nx, 1]
+  g = J(x_input) # [nx]
+  f_in_H = f_in_H_fn(x_input)  # [nx]
+  c_in_H = c_in_H_fn(x_input)  # [nx]
+
+  t_mesh, x_mesh = np.meshgrid(t_arr, x_arr)
+  phi = compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g)
+  print("shape x_arr {}, t_arr {}".format(np.shape(x_arr), np.shape(t_arr)))
+  print("shape x_mesh {}, t_mesh {}".format(np.shape(x_mesh), np.shape(t_mesh)))
+  print('shape phi {}'.format(np.shape(phi)))
+  # plot solution
+  phi_trans = einshape('ij->ji', phi)  # [nx, nt]
+  phi_np = jax.device_get(jnp.concatenate([phi_trans, phi_trans[0:1,:]], axis = 0))  # [nx+1, nt]
+  fig = plt.figure()
+  plt.contourf(x_mesh, t_mesh, phi_np)
+  plt.colorbar()
+  plt.xlabel('x')
+  plt.ylabel('t')
+  plt.savefig('egno3_solution.png')  
