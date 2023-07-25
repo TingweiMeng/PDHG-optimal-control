@@ -214,12 +214,16 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
 
 def compute_ground_truth(egno, ndim, T, x_period, y_period, epsl = 0.0):
     J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
-    nt_dense = 16001
-    nx_dense = 8000
-    ny_dense = 8000
-    dt_dense = T / (nt_dense - 1)
+    # nt_dense = 16001
+    nx_dense = 800
+    ny_dense = 800
     dx_dense = x_period / nx_dense
     dy_dense = y_period / ny_dense
+    dt_dense = 1/(epsl/2 / (dx_dense**2) + 2/dx_dense)
+    nt_dense = int(T / dt_dense) + 2
+
+    print('nx dense {}, ny dense {}, nt dense {}'.format(nx_dense, ny_dense, nt_dense))
+    
     if ndim == 1:
         x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
         x_arr_1d = jnp.array(x_arr_dense[:-1, None])  # [nx_dense, 1]
