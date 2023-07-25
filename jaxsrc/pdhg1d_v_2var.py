@@ -474,8 +474,6 @@ def PDHG_multi_step(egno, f_in_H, c_in_H, stepsz_param, nt, nx,
   else:
     if_quad = False
 
-  # use results from method 1 as initialization for method 2
-  # method 1 with 2 vars
   phi_all = []
   rho_all = []
   vp_all = []
@@ -514,10 +512,12 @@ def main(argv):
   stepsz_param = FLAGS.stepsz_param
   c_on_rho = FLAGS.c_on_rho
 
+  epsl = 0.1
+
   T = 1
   x_period, y_period = 2, 2
-  nx = 20
-  nt = 11
+  nx = 10
+  nt = 6
 
   J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
 
@@ -529,7 +529,7 @@ def main(argv):
   c_in_H = c_in_H_fn(spatial_arr)  # [1, nx]
 
   PDHG_multi_step(egno, f_in_H, c_in_H, stepsz_param, nt, nx,
-                    g, dx, dt, c_on_rho, epsl = 0.0, time_step_per_PDHG = 2)
+                    g, dx, dt, c_on_rho, epsl = epsl, time_step_per_PDHG = 2)
 
 
 if __name__ == '__main__':

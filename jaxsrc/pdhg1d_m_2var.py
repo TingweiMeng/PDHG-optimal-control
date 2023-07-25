@@ -177,7 +177,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
   if if_precondition:
     # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
     reg_param = 10
-    reg_param2 = 0
+    reg_param2 = 1
     f = -2*reg_param *phi_prev[0:1,:]
     # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
     phi_next = solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, 
@@ -313,8 +313,13 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, stepsz_par
 
 
 if __name__ == "__main__":
-  nt = 200
-  nx = 101
+  time_step_per_PDHG = 2
+  nt = 6
+  nx = 10
+  nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
+
+  epsl = 0.1
+
   if_precondition = True
   N_maxiter = 2001
   eps = 1e-6
@@ -325,7 +330,7 @@ if __name__ == "__main__":
   alpha = 2 * jnp.pi / x_period
   J = lambda x: jnp.sin(alpha * x)
   f_in_H_fn = lambda x: 0*x
-  c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * (x-1) * (x-1))
+  c_in_H_fn = lambda x: 0*x + 1
 
   dx = x_period / (nx)
   dt = T / (nt-1)
@@ -334,12 +339,34 @@ if __name__ == "__main__":
   f_in_H = f_in_H_fn(x_arr)  # [1, nx]
   c_in_H = c_in_H_fn(x_arr)  # [1, nx]
     
-  phi0 = einshape("ij->(ki)j", g, k=nt)  # repeat each row of g to nt times, [nt, nx]
-  
-  rho0 = jnp.zeros([nt-1, nx])
-  m0 = jnp.zeros([nt-1, nx])
-  mu0 = jnp.zeros([1, nx])
+  phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
+  rho0 = jnp.zeros([time_step_per_PDHG-1, nx])
+  m0 = jnp.zeros([time_step_per_PDHG-1, nx])
 
-  #utils.timeit(pdhg_1d_periodic_rho_m_EO_L1_xdep)(...) to get time
-  output, error_all = pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, mu0, stepsz_param, 
-                                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = N_maxiter//5, eps = eps)
+  phi_all = []
+  rho_all = []
+  m_all = []
+  for i in range(nt_PDHG):
+    print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
+    output, error_all = pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, stepsz_param, 
+                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 100, eps = eps, epsl=epsl)
+    _, m_curr, rho_curr, _, phi_curr = output[-1]
+    if i < nt_PDHG-1:
+      phi_all.append(phi_curr[:-1,:])
+      rho_all.append(rho_curr[:-1,:])
+      m_all.append(m_curr[:-1,:])
+    else:
+      phi_all.append(phi_curr)
+      rho_all.append(rho_curr)
+      m_all.append(m_curr)
+    g_diff = phi_curr[-1:,:] - phi0[0:1,:]
+    phi0 = phi0 + g_diff
+    rho0 = rho_curr
+    m0 = m_curr
+  phi_all = jnp.concatenate(phi_all, axis = 0)
+  rho_all = jnp.concatenate(rho_all, axis = 0)
+  m_all = jnp.concatenate(m_all, axis = 0)
+
+
+  output, error_all = pdhg_1d_periodic_rho_m_EO_L1_xdep(f_in_H, c_in_H, phi0, rho0, m0, stepsz_param, 
+                                          g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 100, eps = eps, epsl=0.0)
