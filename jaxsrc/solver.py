@@ -70,10 +70,12 @@ def Poisson_eqt_solver(source_term, fv, dt, Neumann_cond = True):
 
 
 @partial(jax.jit, static_argnames=("Neumann_cond",))
-def pdhg_phi_update(source_term, phi_prev, fv, dt, Neumann_cond = True, reg_param = 0.0, reg_param2 = 0.0, f=0.0):
-  ''' this solves (D_{tt} + D_{xx}) (u-u_prev) - reg_param * u -f + reg_param2 * (D_{tt} + D_{xx}) * u = source_term
-      i.e., ((1+reg_param2)(D_{tt} + D_{xx}) - reg_param) u = source_term + (D_{tt} + D_{xx}) * u_prev + f,
+def pdhg_precondition_update(source_term, phi_prev, fv, dt, tau=1.0, Neumann_cond = True, 
+                             reg_param = 0.0, reg_param2 = 0.0, f=0.0):
+  ''' this solves tau*(D_{tt} + D_{xx}) (u-u_prev) - reg_param * u -f + reg_param2 * (D_{tt} + D_{xx}) * u = source_term
+      i.e., ((tau+reg_param2)(D_{tt} + D_{xx}) - reg_param) u = source_term + tau *(D_{tt} + D_{xx}) * u_prev + f,
       where f can be a number or [nt-1, nx] array
+      Using optimization language, this solves min_u source_term * u+ tau*|(Dx+Dt)(u-u_prev)|^2/2 + reg_param*|u|^2/2 + f*u + reg_param2*|(Dx+Dt)u|^2/2
   if Neumann_cond is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
   @parameters:
     source_term: [nt, nx]
@@ -93,19 +95,19 @@ def pdhg_phi_update(source_term, phi_prev, fv, dt, Neumann_cond = True, reg_para
   f_Fourier = jnp.fft.fft(f, axis = 1)  # [nt-1, nx]
   # exclude the first row wrt t
   v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
-  dl = (1+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  du = (1+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  dl = (tau+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = (tau+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
   if Neumann_cond:
     Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
   else:
     Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-1))  # [nt-1]
   Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx)  # [nt-1, nx]
-  thomas_b = (1+reg_param2) * (einshape('n->mn', fv, m = nt-1) + Lap_t_diag_rep) - reg_param # [nt-1, nx]
+  thomas_b = (tau+reg_param2) * (einshape('n->mn', fv, m = nt-1) + Lap_t_diag_rep) - reg_param # [nt-1, nx]
   
   phi_prev_Fourier = jnp.fft.fft(phi_prev[1:,:], axis = 1)  # [nt-1, nx]
-  rhs = v_Fourier + fv[None,:] * phi_prev_Fourier + Lap_t_diag_rep * phi_prev_Fourier # [nt-1, nx]
-  rhs1 = rhs + jnp.pad(phi_prev_Fourier[:-1,:] / (dt*dt), ((1,0), (0,0)))
-  rhs2 = rhs1 + jnp.pad(phi_prev_Fourier[1:,:] / (dt*dt), ((0,1), (0,0)))
+  rhs = v_Fourier + tau * (fv[None,:] * phi_prev_Fourier + Lap_t_diag_rep * phi_prev_Fourier) # [nt-1, nx]
+  rhs1 = rhs + tau * jnp.pad(phi_prev_Fourier[:-1,:] / (dt*dt), ((1,0), (0,0)))
+  rhs2 = rhs1 + tau * jnp.pad(phi_prev_Fourier[1:,:] / (dt*dt), ((0,1), (0,0)))
   phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, rhs2 + f_Fourier) # [nt-1, nx]
   F_phi_next = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
   phi_next = jnp.concatenate([phi_prev[0:1,:], F_phi_next], axis = 0)

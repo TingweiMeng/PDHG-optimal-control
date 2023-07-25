@@ -120,6 +120,52 @@ def get_minimizer_ind(rho_candidates, shift_term, c, z, c_in_H):
   return rho_min[0,:,:]
 
 
+def update_primal(phi_prev, rho_prev, c_on_rho, m_prev, dummy_prev, tau, dt, dx, fv, epsl, if_precondition):
+  delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
+  delta_phi = delta_phi_raw / dt # [nt, nx]
+
+  if if_precondition:
+    # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
+    reg_param = 10
+    reg_param2 = 1
+    f = -2*reg_param *phi_prev[0:1,:]
+    # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
+    phi_next = solver.pdhg_precondition_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, 
+                                      reg_param = reg_param, reg_param2=reg_param2, f=f)
+  else:
+    # no preconditioning
+    phi_next = phi_prev - delta_phi
+  return phi_next
+
+def update_dual(phi_bar, rho_prev, c_on_rho, m_prev, dummy_prev, sigma, dt, dx, epsl, 
+                fns_dict):
+  c_in_H = fns_dict['c_in_H']
+  f_in_H = fns_dict['f_in_H']
+  rho_candidates = []
+  # the previous version: vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
+  z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
+  z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
+  # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
+  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx) / dt + sigma * f_in_H # [nt-1, nx]
+
+  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
+  # two possible quadratic terms on G, 4 combinations
+  vec3 = -c_in_H * c_in_H * c_on_rho - z * c_in_H
+  vec4 = -c_in_H * c_in_H * c_on_rho + z_left * c_in_H
+  rho_candidates.append(jnp.maximum(alp, - c_on_rho))  # for rho large, G = 0
+  rho_candidates.append(jnp.maximum((alp + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
+  rho_candidates.append(jnp.maximum((alp + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
+  rho_candidates.append(jnp.maximum((alp + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
+  rho_candidates.append(jnp.maximum(-c_on_rho - z / c_in_H, - c_on_rho)) # boundary term 1
+  rho_candidates.append(jnp.maximum(-c_on_rho + z_left / c_in_H, - c_on_rho)) # boundary term 2
+  
+  rho_candidates = jnp.array(rho_candidates) # [7, nt-1, nx]
+  rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z, c_in_H)
+  # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
+  m_next = jnp.minimum(jnp.maximum(z, -(rho_next + c_on_rho) * c_in_H), 
+                        (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
+  return rho_next, m_next, 0*m_next
+
 # def update_phi_preconditioning(delta_phi, phi_prev, fv, dt):
 #   ''' this solves -(D_{tt} + D_{xx}) phi = delta_phi with zero Dirichlet at t=0 and 0 Neumann at t=T
 #   @parameters:

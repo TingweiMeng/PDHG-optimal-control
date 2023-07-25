@@ -152,6 +152,45 @@ def updating_v(vp_prev, vm_prev, phi, rho, updating_method, sigma, dt, dx, c_on_
   return vp_next, vm_next
 
   
+def update_primal(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau, dt, dx, fv, epsl, if_precondition=True):
+  eps = 1e-4
+  mp_prev = (rho_prev + c_on_rho + eps) * vp_prev  # [nt-1, nx]
+  mm_prev = (rho_prev + c_on_rho + eps) * vm_prev  # [nt-1, nx]
+  delta_phi_raw = - tau * (A1TransMult_pos(mp_prev, dt, dx) + A1TransMult_neg(mm_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
+  delta_phi = delta_phi_raw / dt # [nt, nx]
+
+  if if_precondition:
+    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
+  else:
+    # no preconditioning
+    phi_next = phi_prev - delta_phi
+  return phi_next
+
+def update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, epsl, fns_dict, rho_v_iters=10, v_method=2, rho_method=0, eps=1e-7):
+  '''
+  @ parameters:
+  fns_dict: dict of functions, should contain Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn
+  '''
+  Hstar_plus_prox_fn = fns_dict['Hstar_plus_prox_fn']
+  Hstar_minus_prox_fn = fns_dict['Hstar_minus_prox_fn']
+  Hstar_plus_fn = fns_dict['Hstar_plus_fn']
+  Hstar_minus_fn = fns_dict['Hstar_minus_fn']
+  for j in range(rho_v_iters):
+    vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_prev, v_method, sigma, dt, dx, c_on_rho, 
+                                Hstar_plus_prox_fn, Hstar_minus_prox_fn)
+    rho_next = updating_rho(rho_prev, phi_bar, vp_next, vm_next, rho_method, sigma, dt, dx, epsl, c_on_rho,
+                          Hstar_plus_fn, Hstar_minus_fn)
+    err1 = jnp.linalg.norm(vp_next - vp_prev) / jnp.maximum(jnp.linalg.norm(vp_prev), 1.0)
+    err2 = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
+    err3 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+    # if err1 < eps and err2 < eps and err3 < eps:
+    #   break
+    rho_prev = rho_next
+    vp_prev = vp_next
+    vm_prev = vm_next
+  return rho_next, vp_next, vm_next
+  
+
 @partial(jax.jit, static_argnames=("if_precondition","v_method", "rho_method", "updating_rho_first",
                                    "Hstar_plus_fn", "Hstar_minus_fn", "Hstar_plus_help_fn", "Hstar_minus_help_fn",
                                    "H_plus_fn", "H_minus_fn"))
@@ -261,79 +300,6 @@ def get_m_from_v(vp, vm, rho, c_on_rho, eps=1e-4):
   m_prev = m_prev_plus + jnp.roll(m_prev_minus, -1, axis = 1) # [nt-1, nx]
   return m_prev
 
-@partial(jax.jit, static_argnames=("if_precondition", "Hstar_plus_fn", "Hstar_minus_fn", "Hstar_plus_help_fn", "Hstar_minus_help_fn",
-                                   "H_plus_fn", "H_minus_fn"))
-def pdhg_1d_periodic_iter_prev2(Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn,
-                              H_plus_fn, H_minus_fn,
-                              f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
-                              g, dx, dt, c_on_rho, if_precondition, fv, epsl = 0.0):
-  eps = 1e-4
-
-  mp_prev = (rho_prev + c_on_rho + eps) * vp_prev  # [nt-1, nx]
-  mm_prev = (rho_prev + c_on_rho + eps) * vm_prev  # [nt-1, nx]
-  delta_phi_raw = - tau * (A1TransMult_pos(mp_prev, dt, dx) + A1TransMult_neg(mm_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
-  delta_phi = delta_phi_raw / dt # [nt, nx]
-
-  if if_precondition:
-    reg_param = 10
-    reg_param2 = 0
-    f = -2*reg_param *phi_prev[0:1,:]
-    phi_next = solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, 
-                                      reg_param = reg_param, reg_param2=reg_param2, f=f)
-    
-    # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
-    # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
-  else:
-    # no preconditioning
-    phi_next = phi_prev - delta_phi
-
-  # extrapolation
-  phi_bar = 2 * phi_next - phi_prev
-
-  m_prev = get_m_from_v(vp_prev, vm_prev, rho_prev, c_on_rho, eps=eps)
-  rho_candidates = []
-  # the previous version: vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
-  z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
-  z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
-  # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
-  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx) / dt + sigma * f_in_H # [nt-1, nx]
-
-  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
-  # two possible quadratic terms on G, 4 combinations
-  vec3 = -c_in_H * c_in_H * c_on_rho - z * c_in_H
-  vec4 = -c_in_H * c_in_H * c_on_rho + z_left * c_in_H
-  rho_candidates.append(jnp.maximum(alp, - c_on_rho))  # for rho large, G = 0
-  rho_candidates.append(jnp.maximum((alp + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + a_i
-  rho_candidates.append(jnp.maximum((alp + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - a_{i-1}
-  rho_candidates.append(jnp.maximum((alp + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
-  rho_candidates.append(jnp.maximum(-c_on_rho - z / c_in_H, - c_on_rho)) # boundary term 1
-  rho_candidates.append(jnp.maximum(-c_on_rho + z_left / c_in_H, - c_on_rho)) # boundary term 2
-  
-  rho_candidates = jnp.array(rho_candidates) # [7, nt-1, nx]
-  rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z, c_in_H)
-  # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
-  # m_next = jnp.minimum(jnp.maximum(z, -(rho_next + c_on_rho) * c_in_H), 
-  #                       (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
-  # vp_next, vm_next = get_v_from_m(m_next, rho_next, c_on_rho, eps=eps)
-  vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_prev, 2, sigma, dt, dx, c_on_rho, 
-                                Hstar_plus_help_fn, Hstar_minus_help_fn)
-  m_next = get_m_from_v(vp_next, vm_next, rho_next, c_on_rho, eps=eps)
-
-  # primal error
-  err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
-  # err2: dual error
-  err2_rho = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
-  err2_m = jnp.linalg.norm(m_next - m_prev) / jnp.maximum(jnp.linalg.norm(m_prev), 1.0)
-  err2 = jnp.sqrt(err2_rho*err2_rho + err2_m*err2_m)
-  # err3: equation error
-  HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dx, H_plus_fn, H_minus_fn, epsl)
-  # HJ_residual = compute_HJ_residual_EO_1d_xdep(phi_next, dt, dx, f_in_H, c_in_H, epsl)
-  err3 = jnp.mean(jnp.abs(HJ_residual))
-
-  return rho_next, phi_next, vp_next, vm_next, jnp.array([err1, err2,err3])
-
-
-
 
 def pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
                                           f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
@@ -415,13 +381,7 @@ def pdhg_1d_periodic_rho_m_EO_L1_xdep(v_method, rho_method, updating_rho_first,
   error_all = []
   results_all = []
   for i in range(N_maxiter):
-    if if_prev_codes:
-      rho_next, phi_next, vp_next, vm_next, error = pdhg_1d_periodic_iter_prev2(Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn, 
-                                                                          H_plus_fn, H_minus_fn,
-                                                                          f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
-                                                                          g, dx, dt, c_on_rho, if_precondition, fv, epsl)
-    else:
-      rho_next, phi_next, vp_next, vm_next, error = pdhg_1d_periodic_iter(v_method, rho_method, updating_rho_first,
+    rho_next, phi_next, vp_next, vm_next, error = pdhg_1d_periodic_iter(v_method, rho_method, updating_rho_first,
                                                                         Hstar_plus_fn, Hstar_minus_fn, Hstar_plus_help_fn, Hstar_minus_help_fn,
                                                                         H_plus_fn, H_minus_fn,
                                                                         f_in_H, c_in_H, tau, sigma, vp_prev, vm_prev, rho_prev, phi_prev,
