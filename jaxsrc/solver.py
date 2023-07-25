@@ -160,11 +160,11 @@ def interpolation_y(fn_left, fn_right, scaling_num):
     # fn_dense[..., i::scaling_num] = fn_left + i * incremental
   return fn_dense
 
-def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, nt, dt, dx):
+def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x, nt, dt, dx):
   '''
   @params:
-    J_on_grids: [nx]
-    fn_H_plus, fn_H_minus: functions taking [nx] and returning [nx]
+    J_on_grids, x: [nx]
+    fn_H_plus, fn_H_minus: functions taking [nx], [nx] and returning [nx]
   @return:
     phi: [nt, nx]
   '''
@@ -173,7 +173,7 @@ def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, nt, dt, dx):
   for i in range(nt-1):
     dphidx_left = (phi_curr - jnp.roll(phi_curr, 1, axis=-1))/dx
     dphidx_right = (jnp.roll(phi_curr, -1, axis=-1) - phi_curr)/dx
-    phi_next = phi_curr - dt * (fn_H_plus(dphidx_left) + fn_H_minus(dphidx_right))
+    phi_next = phi_curr - dt * (fn_H_plus(dphidx_left, x) + fn_H_minus(dphidx_right, x))
     phi_list.append(phi_next)
     phi_curr = phi_next
   return jnp.stack(phi_list, axis = 0)
@@ -242,7 +242,6 @@ if __name__ == "__main__":
 
   import matplotlib.pyplot as plt
   import numpy as np
-  from print_n_plot import compute_EO_forward_solution_1d
 
   x_period, y_period = 2, 2
   T = 1
@@ -252,17 +251,24 @@ if __name__ == "__main__":
   x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)  # [nx+1]
   t_arr = np.linspace(0.0, T, num = nt, endpoint = True)  # [nt]
 
-  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
+  # J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
 
   dx = x_period / (nx)
   dt = T / (nt-1)
   x_input = x_arr[:-1, None]  # [nx, 1]
-  g = J(x_input) # [nx]
-  f_in_H = f_in_H_fn(x_input)  # [nx]
-  c_in_H = c_in_H_fn(x_input)  # [nx]
+
+  alpha = 2 * jnp.pi / x_period
+  J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
+  f_in_H_fn = lambda x: jnp.zeros_like(x)
+  c_in_H_fn = lambda x: jnp.zeros_like(x) + 1
+  fn_H_plus = lambda p,x: c_in_H_fn(x) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x)
+  fn_H_minus = lambda p,x: c_in_H_fn(x) * jnp.minimum(p,0) **2/2 - f_in_H_fn(x)
+
+  J_on_grids = J(x_input[:,0])  # [nx]
+
+  phi = solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x_input[:,0], nt, dt, dx)
 
   t_mesh, x_mesh = np.meshgrid(t_arr, x_arr)
-  phi = compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g)
   print("shape x_arr {}, t_arr {}".format(np.shape(x_arr), np.shape(t_arr)))
   print("shape x_mesh {}, t_mesh {}".format(np.shape(x_mesh), np.shape(t_mesh)))
   print('shape phi {}'.format(np.shape(phi)))
@@ -274,4 +280,4 @@ if __name__ == "__main__":
   plt.colorbar()
   plt.xlabel('x')
   plt.ylabel('t')
-  plt.savefig('egno3_solution.png')  
+  plt.savefig('new_example_sol.png')  
