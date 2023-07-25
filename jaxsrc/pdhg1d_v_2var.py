@@ -120,11 +120,19 @@ def updating_rho(rho_prev, phi, vp, vm, updating_method, sigma, dt, dx, epsl, c_
     reg_param = 0 #10
     reg_param2 = 0 #1
     const = -c_on_rho * 0.1
+    normalization_flag = 2
+
     f = -2*reg_param * const
     rho_next = solver.pdhg_precondition_update(vec, rho_prev, fv, dt, tau_inv=1/sigma, Neumann_tc=True, Dirichlet_ic=False,
                              reg_param = reg_param, reg_param2 = reg_param2, f= f, param3=param3, param4=param4)
     # rho_next = jnp.maximum(rho_prev - sigma * vec, -c_on_rho)  # [nt-1, nx]
     rho_next = jnp.maximum(rho_next, -c_on_rho)
+    if normalization_flag == 1:
+      c = jnp.sum(rho_next) * dx *dt
+      rho_next = rho_next / c
+    elif normalization_flag == 2:
+      c = jnp.sum(rho_next, axis=-1, keepdims=True) * dx
+      rho_next = rho_next / c
   elif updating_method == 1:
     rho_next = (rho_prev + c_on_rho) * jnp.exp(-sigma * vec) - c_on_rho  # [nt-1, nx]
   else:
