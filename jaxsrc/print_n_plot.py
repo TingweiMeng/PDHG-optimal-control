@@ -212,16 +212,19 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
     filename_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
   return save_dir, filename_prefix
 
-def compute_ground_truth(egno, ndim, T, x_period, y_period, epsl = 0.0):
-    J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
-    # nt_dense = 16001
-    nx_dense = 800
-    ny_dense = 800
+
+def get_cfl_condition_1d(nx_dense, T, x_period, epsl=0):
     dx_dense = x_period / nx_dense
-    dy_dense = y_period / ny_dense
     dt_dense = 1/(epsl/2 / (dx_dense**2) + 2/dx_dense)
     nt_dense = int(T / dt_dense) + 2
+    return nt_dense
 
+
+def compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, y_period, epsl = 0.0):
+    J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
+    dx_dense = x_period / nx_dense
+    dy_dense = y_period / ny_dense
+    
     print('nx dense {}, ny dense {}, nt dense {}'.format(nx_dense, ny_dense, nt_dense))
     
     if ndim == 1:
@@ -274,7 +277,11 @@ def main(argv):
     # filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
     filename = FLAGS.filename
     phi = read_solution(filename)
-    phi_dense = compute_ground_truth(egno, ndim, T, x_period, y_period, epsl=epsl)
+    # TODO: modify this when coding 2d
+    nx_dense, ny_dense = 800, 800
+    nt_dense_min = get_cfl_condition_1d(nx_dense, T, x_period, epsl=epsl)
+    nt_dense = ((nt_dense_min-1) // (nt - 1) + 1) * (nt - 1) + 1
+    phi_dense = compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, y_period, epsl=epsl)
 
     # compute error
     if ndim == 1:        
