@@ -190,7 +190,7 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
     # update u:  [Ndata, ndim]
-    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, fns_dict, fv)
+    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, fns_dict)
 
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
