@@ -110,12 +110,21 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 #   out = -rho_km1 + rho_k + (rho_ip1 + rho_im1 - 2*rho_km1) * epsl * dt/dx**2
 #   return out
 
-def updating_rho(rho_prev, phi, vp, vm, updating_method, sigma, dt, dx, epsl, c_on_rho, Hstar_plus_fn, Hstar_minus_fn):
+def updating_rho(rho_prev, phi, vp, vm, updating_method, sigma, dt, dx, epsl, c_on_rho, Hstar_plus_fn, Hstar_minus_fn, fv):
   vec = -Dx_right_decreasedim(phi, dx) * vp - Dx_left_decreasedim(phi, dx) * vm
   vec = vec - Dt_decreasedim(phi,dt) + epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
   vec = vec + Hstar_plus_fn(vm) + Hstar_minus_fn(vp)
   if updating_method == 0:
-    rho_next = jnp.maximum(rho_prev - sigma * vec, -c_on_rho)  # [nt-1, nx]
+    param3 = 1.0
+    param4 = 0.0
+    reg_param = 0 #10
+    reg_param2 = 0 #1
+    const = -c_on_rho * 0.1
+    f = -2*reg_param * const
+    rho_next = solver.pdhg_precondition_update(vec, rho_prev, fv, dt, tau_inv=1/sigma, Neumann_tc=True, Dirichlet_ic=False,
+                             reg_param = reg_param, reg_param2 = reg_param2, f= f, param3=param3, param4=param4)
+    # rho_next = jnp.maximum(rho_prev - sigma * vec, -c_on_rho)  # [nt-1, nx]
+    rho_next = jnp.maximum(rho_next, -c_on_rho)
   elif updating_method == 1:
     rho_next = (rho_prev + c_on_rho) * jnp.exp(-sigma * vec) - c_on_rho  # [nt-1, nx]
   else:
@@ -158,13 +167,13 @@ def update_primal(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau, dt, dx, f
                       + Dt_increasedim(rho_prev,dt) + epsl * Dxx_increasedim(rho_prev,dx)) # [nt, nx]
 
   if if_precondition:
-    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
+    phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_tc = True)
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
   return phi_next
 
-def update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, epsl, fns_dict, rho_v_iters=10, v_method=2, rho_method=0, eps=1e-7):
+def update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, epsl, fns_dict, fv, rho_v_iters=10, v_method=2, rho_method=0, eps=1e-7):
   '''
   @ parameters:
   fns_dict: dict of functions, should contain Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn
@@ -177,7 +186,7 @@ def update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, ep
     vp_next, vm_next = updating_v(vp_prev, vm_prev, phi_bar, rho_prev, v_method, sigma, dt, dx, c_on_rho, 
                                 Hstar_plus_prox_fn, Hstar_minus_prox_fn)
     rho_next = updating_rho(rho_prev, phi_bar, vp_next, vm_next, rho_method, sigma, dt, dx, epsl, c_on_rho,
-                          Hstar_plus_fn, Hstar_minus_fn)
+                          Hstar_plus_fn, Hstar_minus_fn, fv)
     err1 = jnp.linalg.norm(vp_next - vp_prev) / jnp.maximum(jnp.linalg.norm(vp_prev), 1.0)
     err2 = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
     err3 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)

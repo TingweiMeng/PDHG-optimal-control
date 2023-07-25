@@ -57,23 +57,25 @@ def get_minimizer_ind(rho_candidates, shift_term, c, z, c_in_H):
 
 
 def update_primal(phi_prev, rho_prev, c_on_rho, m_prev, dummy_prev, tau, dt, dx, fv, epsl, if_precondition):
-  delta_phi = - tau * (Dx_left_increasedim(m_prev, dx) + Dt_increasedim(rho_prev, dt) + epsl * Dxx_increasedim(rho_prev, dx)) # [nt, nx]
+  scaling = 1/ tau
+  delta_phi = - scaling * tau * (Dx_left_increasedim(m_prev, dx) + Dt_increasedim(rho_prev, dt) + epsl * Dxx_increasedim(rho_prev, dx)) # [nt, nx]
 
   if if_precondition:
     # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
-    reg_param = 10
-    reg_param2 = 1
+    reg_param = 10 * scaling
+    reg_param2 = 1 * scaling
     f = -2*reg_param *phi_prev[0:1,:]
     # phi_next = phi_prev + solver.pdhg_phi_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, reg_param = reg_param)
-    phi_next = solver.pdhg_precondition_update(delta_phi, phi_prev, fv, dt, Neumann_cond = True, 
-                                      reg_param = reg_param, reg_param2=reg_param2, f=f)
+    phi_next = solver.pdhg_precondition_update(delta_phi[1:,:], phi_prev[1:,:], fv, dt, Neumann_tc = True, 
+                                      reg_param = reg_param, reg_param2=reg_param2, f=f, tau_inv= scaling)  # [nt-1, nx]
+    phi_next = jnp.concatenate([phi_prev[0:1,:], phi_next], axis = 0)  # [nt, nx]
   else:
     # no preconditioning
     phi_next = phi_prev - delta_phi
   return phi_next
 
 def update_dual(phi_bar, rho_prev, c_on_rho, m_prev, dummy_prev, sigma, dt, dx, epsl, 
-                fns_dict):
+                fns_dict, fv):
   c_in_H = fns_dict['c_in_H']
   f_in_H = fns_dict['f_in_H']
   rho_candidates = []

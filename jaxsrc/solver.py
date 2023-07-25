@@ -39,15 +39,15 @@ tridiagonal_solve_batch_2d = jax.vmap(jax.vmap(tridiagonal_solve, in_axes=(None,
                             in_axes=(None, -1, None, -1), out_axes=(-1))
 
 
-@partial(jax.jit, static_argnames=("Neumann_cond",))
-def Poisson_eqt_solver(source_term, fv, dt, Neumann_cond = True):
+@partial(jax.jit, static_argnames=("Neumann_tc",))
+def Poisson_eqt_solver(source_term, fv, dt, Neumann_tc = True):
   ''' this solves (D_{tt} + D_{xx}) (u-u_prev) = source_term
-  if Neumann_cond is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
+  if Neumann_tc is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
   @parameters:
     source_term: [nt, nx]
     fv: [nx], complex, this is FFT of neg Laplacian -Dxx
     dt: scalar
-    Neumann_cond: bool
+    Neumann_tc: bool
   @return:
     phi_update: [nt, nx]
   '''
@@ -56,7 +56,7 @@ def Poisson_eqt_solver(source_term, fv, dt, Neumann_cond = True):
   v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
   dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
   du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  if Neumann_cond:
+  if Neumann_tc:
     Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
   else:
     Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-1))  # [nt-1]
@@ -69,49 +69,59 @@ def Poisson_eqt_solver(source_term, fv, dt, Neumann_cond = True):
   return phi_update
 
 
-@partial(jax.jit, static_argnames=("Neumann_cond",))
-def pdhg_precondition_update(source_term, phi_prev, fv, dt, tau=1.0, Neumann_cond = True, 
-                             reg_param = 0.0, reg_param2 = 0.0, f=0.0):
-  ''' this solves tau*(D_{tt} + D_{xx}) (u-u_prev) - reg_param * u -f + reg_param2 * (D_{tt} + D_{xx}) * u = source_term
-      i.e., ((tau+reg_param2)(D_{tt} + D_{xx}) - reg_param) u = source_term + tau *(D_{tt} + D_{xx}) * u_prev + f,
+
+@partial(jax.jit, static_argnames=("Neumann_tc","Dirichlet_ic"))
+def pdhg_precondition_update(source_term, phi_prev, fv, dt, tau_inv=1.0, Neumann_tc = True, Dirichlet_ic = True,
+                             reg_param = 0.0, reg_param2 = 0.0, f=0.0, param3 = 0.0, param4=1.0):
+  ''' this solves 1/tau*(param4*(D_{tt} + D_{xx}) - param3) (u-u_prev) - reg_param * u -f + reg_param2 * (D_{tt} + D_{xx}) * u = source_term
+      i.e., ((1/tau * param4 +reg_param2)(D_{tt} + D_{xx})- param3/tau - reg_param) u = source_term + 1/tau *(param4*(D_{tt} + D_{xx})- param3) * u_prev + f,
       where f can be a number or [nt-1, nx] array
-      Using optimization language, this solves min_u source_term * u+ tau*|(Dx+Dt)(u-u_prev)|^2/2 + reg_param*|u|^2/2 + f*u + reg_param2*|(Dx+Dt)u|^2/2
-  if Neumann_cond is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
+      Using optimization language, this solves min_u source_term * u+ 1/tau*(param4*|(Dx+Dt)(u-u_prev)|^2/2 + param3 *|u-u_prev|^2/2) + reg_param*|u|^2/2 + f*u + reg_param2*|(Dx+Dt)u|^2/2
+  if Neumann_tc is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
   @parameters:
-    source_term: [nt, nx]
-    phi_prev: [nt, nx]
+    source_term: [nt-1, nx]
+    phi_prev: [nt-1, nx]
     fv: [nx], complex, this is FFT of neg Laplacian -Dxx
     dt: scalar
-    Neumann_cond: bool
+    Neumann_tc: bool
     reg_param: scalar, regularization parameter
   @return:
-    phi_update: [nt, nx]
+    phi_next: [nt-1, nx]
   '''
-  nt, nx = jnp.shape(source_term)
-  if jnp.isscalar(f):
-    f = jnp.ones((nt-1, nx)) * f
-  elif jnp.shape(f) == (1,nx):
-    f = jnp.ones((nt-1, nx)) * f
+  ntm1, nx = jnp.shape(source_term)
+  if jnp.isscalar(f) or jnp.shape(f) == (1,nx):
+    f = jnp.ones((ntm1, nx)) * f
   f_Fourier = jnp.fft.fft(f, axis = 1)  # [nt-1, nx]
   # exclude the first row wrt t
-  v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
-  dl = (tau+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  du = (tau+reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  if Neumann_cond:
-    Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]
+  v_Fourier =  jnp.fft.fft(source_term, axis = 1)  # [nt-1, nx]
+  dl = (tau_inv * param4 + reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((ntm1-1,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = (tau_inv * param4 + reg_param2)*jnp.pad(1/(dt*dt)*jnp.ones((ntm1-1,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  if Neumann_tc:
+    if Dirichlet_ic:
+      Lap_t_diag = jnp.array([-2/(dt*dt)] * (ntm1-1) + [-1/(dt*dt)])  # [nt-1]
+    else:
+      if ntm1 < 2:
+        Lap_t_diag = jnp.array([0] * ntm1)  # [nt-1]
+      else:
+        Lap_t_diag = jnp.array([-1/(dt*dt)] + [-2/(dt*dt)] * (ntm1-2) + [-1/(dt*dt)])  # [nt-1]
   else:
-    Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-1))  # [nt-1]
+    if Dirichlet_ic:
+      Lap_t_diag = jnp.array([-2/(dt*dt)] * (ntm1))  # [nt-1]
+    else:
+      Lap_t_diag = jnp.array([-1/(dt*dt)] + [-2/(dt*dt)] * (ntm1-1))
   Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx)  # [nt-1, nx]
-  thomas_b = (tau+reg_param2) * (einshape('n->mn', fv, m = nt-1) + Lap_t_diag_rep) - reg_param # [nt-1, nx]
-  
-  phi_prev_Fourier = jnp.fft.fft(phi_prev[1:,:], axis = 1)  # [nt-1, nx]
-  rhs = v_Fourier + tau * (fv[None,:] * phi_prev_Fourier + Lap_t_diag_rep * phi_prev_Fourier) # [nt-1, nx]
-  rhs1 = rhs + tau * jnp.pad(phi_prev_Fourier[:-1,:] / (dt*dt), ((1,0), (0,0)))
-  rhs2 = rhs1 + tau * jnp.pad(phi_prev_Fourier[1:,:] / (dt*dt), ((0,1), (0,0)))
-  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, rhs2 + f_Fourier) # [nt-1, nx]
-  F_phi_next = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
-  phi_next = jnp.concatenate([phi_prev[0:1,:], F_phi_next], axis = 0)
+  thomas_b = (tau_inv * param4 + reg_param2) * (einshape('n->mn', fv, m = ntm1) + Lap_t_diag_rep) - param3*tau_inv - reg_param # [nt-1, nx]
+
+  phi_prev_Fourier = jnp.fft.fft(phi_prev, axis = 1)  # [nt-1, nx]
+  rhs = v_Fourier + tau_inv * param4 * (fv[None,:] * phi_prev_Fourier + Lap_t_diag_rep * phi_prev_Fourier) 
+  rhs = rhs + tau_inv * param4 * jnp.pad(phi_prev_Fourier[:-1,:] / (dt*dt), ((1,0), (0,0)))
+  rhs = rhs + tau_inv * param4 * jnp.pad(phi_prev_Fourier[1:,:] / (dt*dt), ((0,1), (0,0)))
+  rhs = rhs - param3 * tau_inv * phi_prev_Fourier # [nt-1, nx]
+  rhs = rhs + f_Fourier
+  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, rhs) # [nt-1, nx]
+  phi_next = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
   return phi_next
+
 
 def interpolation_t(fn_left, fn_right, scaling_num):
   '''

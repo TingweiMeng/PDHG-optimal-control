@@ -175,12 +175,9 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
   tau_rho = tau_rho * scale
   tau_phi = tau_phi / scale
 
-  if if_precondition:
-    # fft for preconditioning
-    Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
-    fv = jnp.fft.fft(Lap_vec)  # [nx]
-  else:
-    fv = None
+  # fft for preconditioning
+  Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
+  fv = jnp.fft.fft(Lap_vec)  # [nx]
 
   H_plus_fn = fns_dict['H_plus_fn']
   H_minus_fn = fns_dict['H_minus_fn']
@@ -193,7 +190,7 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
     # update u:  [Ndata, ndim]
-    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, fns_dict)
+    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, fns_dict, fv)
 
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
@@ -274,8 +271,9 @@ def main(argv):
   epsl = FLAGS.epsl
   vmethod = FLAGS.vmethod
 
-  nt = 6
+  nt = 7
   nx = 10
+  time_step_per_PDHG = 3
 
   N_maxiter = 2001
   print_freq = 100
@@ -319,7 +317,7 @@ def main(argv):
 
   ndim = 1
   PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
-                    g, dx, dt, c_on_rho, time_step_per_PDHG = 2,
+                    g, dx, dt, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param, if_precondition=True, dy = 0.0)
 
