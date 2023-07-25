@@ -11,6 +11,128 @@ import pickle
 from save_analysis import compute_HJ_residual_EO_1d_general
 import matplotlib.pyplot as plt
 
+@jax.jit
+def Dx_right_decreasedim(phi, dx):
+  '''F phi = (phi_{k+1,i+1}-phi_{k+1,i})/dx
+  phi_{k+1,i+1} is periodic in i+1
+  @ parameters:
+    phi: [nt, nx]
+  @ return
+    out: [nt-1, nx]
+  '''
+  phi_ip1 = jnp.roll(phi, -1, axis=1)
+  out = phi_ip1 - phi
+  out = out[1:,:]/dx
+  return out
+
+@jax.jit
+def Dx_right_increasedim(m, dx):
+  '''F m = (-m[k-1,i] + m[k-1,i+1])/dx
+  m[k,i+1] is periodic in i+1
+  prepend 0 in axis-0
+  @ parameters:
+    m: [nt-1, nx]
+  @ return
+    out: [nt, nx]
+  '''
+  m_ip1 = jnp.roll(m, -1, axis=1)
+  out = -m + m_ip1
+  out = out/dx
+  out = jnp.pad(out, ((1,0),(0,0)), mode = 'constant', constant_values=0.0) #prepend 0
+  return out
+
+@jax.jit
+def Dx_left_decreasedim(phi, dx):
+  '''F phi = (phi_{k+1,i}-phi_{k+1,i-1})/dx
+  phi_{k+1,i-1} is periodic in i+1
+  @ parameters:
+    phi: [nt, nx]
+  @ return
+    out: [nt-1, nx]
+  '''
+  phi_im1 = jnp.roll(phi, 1, axis=1)
+  out = phi - phi_im1
+  out = out[1:,:]/dx
+  return out
+
+@jax.jit
+def Dx_left_increasedim(m, dx):
+  '''F m = (-m[k,i-1] + m[k,i])/dx
+  m[k,i-1] is periodic in i-1
+  prepend 0 in axis-0
+  @ parameters:
+    m: [nt-1, nx]
+  @ return
+    out: [nt, nx]
+  '''
+  m_im1 = jnp.roll(m, 1, axis=1)
+  out = -m_im1 + m
+  out = out/dx
+  out = jnp.pad(out, ((1,0),(0,0)), mode = 'constant', constant_values=0.0) #prepend 0
+  return out
+
+
+@jax.jit
+def Dt_decreasedim(phi, dt):
+  '''Dt phi = (phi_{k+1,i}-phi_{k,i})/dt
+  phi_{k+1,i} is not periodic
+  @ parameters:
+    phi: [nt, nx]
+  @ return
+    out: [nt-1, nx]
+  '''
+  phi_kp1 = phi[1:,:]
+  phi_k = phi[:-1,:]
+  out = (phi_kp1 - phi_k) /dt
+  return out
+
+@jax.jit
+def Dxx_decreasedim(phi, dx):
+  '''Dxx phi = (phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
+  phi_{k+1,i} is not periodic
+  @ parameters:
+    phi: [nt, nx]
+  @ return
+    out: [nt-1, nx]
+  '''
+  phi_kp1 = phi[1:,:]
+  phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
+  phi_im1 = jnp.roll(phi_kp1, 1, axis=1)
+  out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dx**2
+  return out
+
+
+@jax.jit
+def Dt_increasedim(rho, dt):
+  '''F rho = (-rho[k-1,i] + rho[k,i])/dt
+            #k = 0...(nt-1)
+  rho[-1,:] = 0
+  @ parameters:
+    rho: [nt-1, nx]
+  @ return
+    out: [nt, nx]
+  '''
+  rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
+  rho_k = jnp.pad(rho, ((0,1),(0,0)),  mode = 'constant', constant_values=0.0)
+  out = (-rho_km1 + rho_k)/dt
+  return out
+
+@jax.jit
+def Dxx_increasedim(rho, dx):
+  '''F rho = (rho[k-1,i+1]+rho[k-1,i-1]-2*rho[k-1,i])/dx^2
+            #k = 0...(nt-1)
+  rho[-1,:] = 0
+  @ parameters:
+    rho: [nt-1, nx]
+  @ return
+    out: [nt, nx]
+  '''
+  rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
+  rho_im1 = jnp.roll(rho_km1, 1, axis=1)
+  rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
+  out = (rho_ip1 + rho_im1 - 2*rho_km1) /dx**2
+  return out
+
 def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
                    dx, dt, c_on_rho, fns_dict,
                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,

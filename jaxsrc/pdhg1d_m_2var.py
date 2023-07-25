@@ -10,74 +10,10 @@ from solver import interpolation_x, interpolation_t
 import pickle
 from save_analysis import compute_HJ_residual_EO_1d_xdep
 import matplotlib.pyplot as plt
+from pdhg_solver import Dx_left_increasedim, Dx_right_decreasedim, Dt_decreasedim, Dt_increasedim, Dxx_decreasedim, Dxx_increasedim
 
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-
-@jax.jit
-def A1Mult(phi, dt, dx):
-  '''A1 phi = (-phi_{k+1,i+1}+phi_{k+1,i})*dt/dx
-  phi_{k+1,i+1} is periodic in i+1
-  @ parameters:
-    phi: [nt, nx]
-  @ return
-    out: [nt-1, nx]
-  '''
-  phi_ip1 = jnp.roll(phi, -1, axis=1)
-  out = -phi_ip1 + phi
-  out = out[1:,:]*dt/dx
-  return out
-
-
-@jax.jit
-def A1TransMult(m, dt, dx):
-  '''A1.T m = (-m[k,i-1] + m[k,i])*dt/dx
-  m[k,i-1] is periodic in i-1
-  prepend 0 in axis-0
-  @ parameters:
-    m: [nt-1, nx]
-  @ return
-    out: [nt, nx]
-  '''
-  m_im1 = jnp.roll(m, 1, axis=1)
-  out = -m_im1 + m
-  out = out*dt/dx
-  out = jnp.pad(out, ((1,0),(0,0)), mode = 'constant', constant_values=0.0) #prepend 0
-  return out
-
-@jax.jit
-def A2Mult(phi, epsl, dt, dx):
-  '''A2 phi = -phi_{k+1,i}+phi_{k,i} + eps*dt*(phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
-  phi_{k+1,i} is not periodic
-  @ parameters:
-    phi: [nt, nx]
-  @ return
-    out: [nt-1, nx]
-  '''
-  phi_kp1 = phi[1:,:]
-  phi_k = phi[:-1,:]
-  phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
-  phi_im1 = jnp.roll(phi_kp1, 1, axis=1)
-  out = -phi_kp1 + phi_k + (phi_ip1 + phi_im1 - 2*phi_kp1) * epsl * dt/dx**2
-  return out
-
-
-@jax.jit
-def A2TransMult(rho, epsl, dt, dx):
-  '''A2.T rho = (-rho[k-1,i] + rho[k,i]) +eps*dt*(rho[k-1,i+1]+rho[k-1,i-1]-2*rho[k-1,i])/dx^2
-            #k = 0...(nt-1)
-  rho[-1,:] = 0
-  @ parameters:
-    rho: [nt-1, nx]
-  @ return
-    out: [nt, nx]
-  '''
-  rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
-  rho_k = jnp.pad(rho, ((0,1),(0,0)),  mode = 'constant', constant_values=0.0)
-  rho_im1 = jnp.roll(rho_km1, 1, axis=1)
-  rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
-  out = -rho_km1 + rho_k + (rho_ip1 + rho_im1 - 2*rho_km1) * epsl * dt/dx**2
-  return out
 
 
 def get_Gsq_from_rho(rho_plus_c_mul_cinH, z):
@@ -121,8 +57,7 @@ def get_minimizer_ind(rho_candidates, shift_term, c, z, c_in_H):
 
 
 def update_primal(phi_prev, rho_prev, c_on_rho, m_prev, dummy_prev, tau, dt, dx, fv, epsl, if_precondition):
-  delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
-  delta_phi = delta_phi_raw / dt # [nt, nx]
+  delta_phi = - tau * (Dx_left_increasedim(m_prev, dx) + Dt_increasedim(rho_prev, dt) + epsl * Dxx_increasedim(rho_prev, dx)) # [nt, nx]
 
   if if_precondition:
     # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
@@ -142,11 +77,9 @@ def update_dual(phi_bar, rho_prev, c_on_rho, m_prev, dummy_prev, sigma, dt, dx, 
   c_in_H = fns_dict['c_in_H']
   f_in_H = fns_dict['f_in_H']
   rho_candidates = []
-  # the previous version: vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
-  z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
+  z = m_prev + sigma * Dx_right_decreasedim(phi_bar, dx)  # [nt-1, nx]
   z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
-  # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
-  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx) / dt + sigma * f_in_H # [nt-1, nx]
+  alp = rho_prev + sigma * (Dt_decreasedim(phi_bar, dt) - epsl * Dxx_decreasedim(phi_bar, dx) + f_in_H) # [nt-1, nx]
 
   rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
   # two possible quadratic terms on G, 4 combinations
@@ -217,8 +150,7 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
     err: jnp.array([err1, err2,err3])
   '''
 
-  delta_phi_raw = - tau * (A1TransMult(m_prev, dt, dx) + A2TransMult(rho_prev, epsl, dt, dx)) # [nt, nx]
-  delta_phi = delta_phi_raw / dt # [nt, nx]
+  delta_phi = - tau * (Dx_left_increasedim(m_prev, dx) + Dt_increasedim(rho_prev, dt) + epsl * Dxx_increasedim(rho_prev, dx)) # [nt, nx]
 
   if if_precondition:
     # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt, Neumann_cond = True)
@@ -236,11 +168,9 @@ def pdhg_1d_periodic_iter(f_in_H, c_in_H, tau, sigma, m_prev, rho_prev, phi_prev
   phi_bar = 2 * phi_next - phi_prev
 
   rho_candidates = []
-  # the previous version: vec1 = m_prev - sigma * A1Mult(phi_bar, dt, dx)  # [nt-1, nx]
-  z = m_prev - sigma * A1Mult(phi_bar, dt, dx) / dt  # [nt-1, nx]
+  z = m_prev + sigma * Dx_right_decreasedim(phi_bar, dx)  # [nt-1, nx]
   z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
-  # previous version: vec2 = rho_prev - sigma * A2Mult(phi_bar) + sigma * f_in_H * dt # [nt-1, nx]
-  alp = rho_prev - sigma * A2Mult(phi_bar, epsl, dt, dx) / dt + sigma * f_in_H # [nt-1, nx]
+  alp = rho_prev + sigma * (Dt_decreasedim(phi_bar, dt) - epsl * Dxx_decreasedim(phi_bar, dx) + f_in_H) # [nt-1, nx]
 
   rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
   # two possible quadratic terms on G, 4 combinations
