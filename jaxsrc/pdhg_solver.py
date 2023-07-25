@@ -134,12 +134,8 @@ def Dxx_increasedim(rho, dx):
   return out
 
 def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
-                   dx, dt, c_on_rho, fns_dict,
-                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                   epsl = 0.0,
-                   stepsz_param=0.9,
-                   if_precondition=True, 
-                   dy = 0.0):
+                   dx, dt, c_on_rho, fns_dict, epsl = 0.0, dy = 0.0,
+                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9):
   '''
   @ parameters:
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
@@ -153,28 +149,24 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     fns_dict: dict of functions, if using vmethod, should contain Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn
                       if using mmethod, should contain vectors f_in_H: [1, nx], c_in_H: [1, nx]
                       in both cases, should contain H_plus_fn, H_minus_fn
+    epsl: scalar, diffusion coefficient
+    dy: scalar, placeholder for 2d case
     N_maxiter: int, maximum number of iterations
     print_gap: int, gap for printing and saving results
     eps: scalar, stopping criterion
-    if_saving: bool, if save results
+    stepsz_param: scalar, step size parameter
   @ returns:
   '''
-  nt,nx = jnp.shape(phi0)
+  _,nx = jnp.shape(phi0)
   phi_prev = phi0
   rho_prev = rho0
   vp_prev = v0[0]
   vm_prev = v0[1]
 
-  if if_precondition:
-    tau_phi = stepsz_param
-  else:
-    tau_phi = stepsz_param / (2/dx + 3/dt)
-
-  tau_rho = tau_phi
   scale = 1.5
-  tau_rho = tau_rho * scale
-  tau_phi = tau_phi / scale
-
+  tau_phi = stepsz_param / scale
+  tau_rho = stepsz_param * scale
+  
   # fft for preconditioning
   Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
   fv = jnp.fft.fft(Lap_vec)  # [nx]
@@ -185,11 +177,9 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
   results_all = []
 
   for i in range(N_maxiter):
-    # update p:  [Ndata, ndim]
-    phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau_phi, dt, dx, fv, epsl, if_precondition=if_precondition)
+    phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau_phi, dt, dx, fv, epsl)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
-    # update u:  [Ndata, ndim]
     rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, fns_dict)
 
     # primal error
@@ -213,7 +203,7 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
       break
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, [vp_next, vm_next], rho_prev, [], phi_prev))
-      print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
+      print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
       print('vm max {:.3E}, vm min {:.3E}, vp max {:.3E}, vp min {:.3E}'.format(jnp.max(vm_next), jnp.min(vm_next), jnp.max(vp_next), jnp.min(vp_next)), flush = True)
     rho_prev = rho_next
@@ -222,14 +212,14 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     vm_prev = vm_next
   # print the final error
   print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
-  results_all.append((i+1, [vp_next, vm_next], rho_next, [], phi_next))
+  results_all.append((i+1, [vp_next, vm_next], rho_next, None, phi_next))
   return results_all, jnp.array(error_all)
         
 
 def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
                     g, dx, dt, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                    epsl = 0.0, stepsz_param=0.9, if_precondition=True, dy = 0.0):
+                    epsl = 0.0, stepsz_param=0.9, dy = 0.0):
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
   
@@ -250,13 +240,13 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
     results_all, _ = pdhg_fn(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
                                     dx, dt, c_on_rho, fns_dict,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                                    epsl = epsl, stepsz_param=stepsz_param, if_precondition=if_precondition, dy = dy)
+                                    epsl = epsl, stepsz_param=stepsz_param, dy = dy)
     _, v_curr, rho_curr, _, phi_curr = results_all[-1]
     if i < nt_PDHG-1:
       phi_all.append(phi_curr[:-1,:])
     else:
       phi_all.append(phi_curr)
-    g_diff = phi_curr[-1:,:] - phi0[0:1,:]
+    g_diff = phi_curr[-1:,...] - phi0[0:1,...]
     phi0 = phi0 + g_diff
     rho0 = rho_curr
     v0 = v_curr
@@ -295,8 +285,8 @@ def main(argv):
   c_in_H = c_in_H_fn(x_arr)  # [1, nx]
 
   if vmethod == 1: # v method
-    fn_update_primal = pdhg1d_v_2var.update_primal
-    fn_update_dual = pdhg1d_v_2var.update_dual
+    fn_update_primal = pdhg1d_v_2var.update_primal_1d
+    fn_update_dual = pdhg1d_v_2var.update_dual_1d
     Hstar_minus_fn = lambda p: 0*p - f_in_H/2
     Hstar_plus_fn = lambda p: 0*p - f_in_H/2
     Hstar_minus_prox_fn = lambda p, t: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H)
@@ -319,7 +309,7 @@ def main(argv):
   PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
                     g, dx, dt, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                    epsl = epsl, stepsz_param=stepsz_param, if_precondition=True, dy = 0.0)
+                    epsl = epsl, stepsz_param=stepsz_param, dy = 0.0)
 
 if __name__ == '__main__':
   from absl import app, flags, logging
