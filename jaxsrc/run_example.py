@@ -12,7 +12,7 @@ import pytz
 from datetime import datetime
 import os
 import save_analysis
-from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d, compute_ground_truth
+from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d
 
 
 def method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 

@@ -13,7 +13,7 @@ import pytz
 from datetime import datetime
 import os
 import save_analysis
-from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d, compute_ground_truth
+from print_n_plot import get_save_dir
 
 
 def method1_3var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 
@@ -119,17 +119,6 @@ def main(argv):
   mu0 = jnp.zeros([1, nx])
   vp0 = jnp.zeros([nt-1, nx])
   vm0 = jnp.zeros([nt-1, nx])
-  v0 = [vp0, vm0]
-
-  # put true solution for testing
-  phi_dense = compute_ground_truth(egno, 1, T, x_period, y_period)
-  phi0 = get_sol_on_coarse_grid_1d(phi_dense, nt, nx)
-  # vp0 = jnp.zeros([nt-1, nx])
-  # vm0 = jnp.zeros([nt-1, nx])
-  v = (jnp.roll(phi0, -1, axis=1) - jnp.roll(phi0, 1, axis=1)) / (2 * dx)
-  v = v[1:,:]
-  vm0 = jnp.maximum(v, 0)
-  vp0 = jnp.minimum(v, 0)
   v0 = [vp0, vm0]
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
