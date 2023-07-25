@@ -224,6 +224,7 @@ def compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, 
     J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
     dx_dense = x_period / nx_dense
     dy_dense = y_period / ny_dense
+    dt_dense = T / (nt_dense - 1)
     
     print('nx dense {}, ny dense {}, nt dense {}'.format(nx_dense, ny_dense, nt_dense))
     
