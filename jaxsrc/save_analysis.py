@@ -37,9 +37,9 @@ def compute_HJ_residual_EO_1d_general(phi, dt, dx, H_plus, H_minus, epsl):
   '''
   dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
   dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
-  H_val = H_plus(dphidx_left) + H_minus(dphidx_right)
+  H_val = H_plus(dphidx_left[1:,:]) + H_minus(dphidx_right[1:,:])  # [nt-1, nx]
   Lap = (dphidx_right - dphidx_left)/dx
-  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val[1:,:] - epsl * Lap[1:,:]
+  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val - epsl * Lap[1:,:]
   return HJ_residual
 
 def compute_HJ_residual_EO_2d_xdep(phi, dt, dx, dy, f_in_H, c_in_H, epsl):

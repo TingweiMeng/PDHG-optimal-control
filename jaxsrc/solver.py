@@ -170,7 +170,7 @@ def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x, nt, dt, dx):
   '''
   @params:
     J_on_grids, x: [nx]
-    fn_H_plus, fn_H_minus: functions taking [nx], [nx] and returning [nx]
+    fn_H_plus, fn_H_minus: functions taking p,x,t (p,x are [nx], t is scalar) and returning [nx]
   @return:
     phi: [nt, nx]
   '''
@@ -179,7 +179,7 @@ def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x, nt, dt, dx):
   for i in range(nt-1):
     dphidx_left = (phi_curr - jnp.roll(phi_curr, 1, axis=-1))/dx
     dphidx_right = (jnp.roll(phi_curr, -1, axis=-1) - phi_curr)/dx
-    phi_next = phi_curr - dt * (fn_H_plus(dphidx_left, x) + fn_H_minus(dphidx_right, x))
+    phi_next = phi_curr - dt * (fn_H_plus(dphidx_left, x, i*dt) + fn_H_minus(dphidx_right, x, i*dt))
     phi_list.append(phi_next)
     phi_curr = phi_next
   return jnp.stack(phi_list, axis = 0)
@@ -252,7 +252,7 @@ if __name__ == "__main__":
   x_period, y_period = 2, 2
   T = 1
   nx = 101
-  nt = 201
+  nt = 501
   egno = 1
   x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)  # [nx+1]
   t_arr = np.linspace(0.0, T, num = nt, endpoint = True)  # [nt]
@@ -261,18 +261,20 @@ if __name__ == "__main__":
 
   dx = x_period / (nx)
   dt = T / (nt-1)
-  x_input = x_arr[:-1, None]  # [nx, 1]
+  x_input = x_arr[:-1]  # [nx]
 
   alpha = 2 * jnp.pi / x_period
-  J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
-  f_in_H_fn = lambda x: jnp.zeros_like(x)
+  # J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
+  J = lambda x: 0 * x
+  # J = lambda x: -x**2/10 + 1
+  f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x - t - 0.5)**2/2, (x+2 - t - 0.5)**2/2), (x-2 - t - 0.5)**2/2)
   c_in_H_fn = lambda x: jnp.zeros_like(x) + 1
-  fn_H_plus = lambda p,x: c_in_H_fn(x) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x)/2
-  fn_H_minus = lambda p,x: c_in_H_fn(x) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x)/2
+  fn_H_plus = lambda p,x,t: c_in_H_fn(x) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x,t)/2
+  fn_H_minus = lambda p,x,t: c_in_H_fn(x) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x,t)/2
 
-  J_on_grids = J(x_input[:,0])  # [nx]
+  J_on_grids = J(x_input)  # [nx]
 
-  phi = solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x_input[:,0], nt, dt, dx)
+  phi = solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x_input, nt, dt, dx)
 
   t_mesh, x_mesh = np.meshgrid(t_arr, x_arr)
   print("shape x_arr {}, t_arr {}".format(np.shape(x_arr), np.shape(t_arr)))

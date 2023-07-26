@@ -12,6 +12,7 @@ import os
 import save_analysis
 from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d
 from pdhg_solver import PDHG_multi_step
+import matplotlib.pyplot as plt
 
 
 def main(argv):
@@ -43,32 +44,38 @@ def main(argv):
   dx = x_period / (nx)
   dt = T / (nt-1)
   x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:]  # [1, nx]
+  # t_arr = jnp.linspace(dt, T, num = nt-1)[:,None]  # [nt-1, 1]
 
   if egno == 11: # v method
     alpha = 2 * jnp.pi / x_period
-    J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
-    f_in_H_fn = lambda x: jnp.zeros_like(x)
+    # J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
+    J = lambda x: 0 * x
+    # f_in_H_fn = lambda p: jnp.zeros_like(p)
+    # c_in_H_fn = lambda p: jnp.zeros_like(p) + 1
+    f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x - t - 0.5)**2/2, (x+2 - t - 0.5)**2/2), (x-2 - t - 0.5)**2/2)
     c_in_H_fn = lambda x: jnp.zeros_like(x) + 1
+    # fn_H_plus = lambda p,x,t: c_in_H_fn(x) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x,t)/2
+    # fn_H_minus = lambda p,x,t: c_in_H_fn(x) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x,t)/2
 
     g = J(x_arr)  # [1, nx]
-    f_in_H = f_in_H_fn(x_arr)  # [1, nx]
+    # f_in_H = f_in_H_fn(x_arr, t_arr)  # [nt-1, nx]
     c_in_H = c_in_H_fn(x_arr)  # [1, nx]
 
     fn_update_primal = pdhg1d_v_2var.update_primal_1d
     fn_update_dual = pdhg1d_v_2var.update_dual_1d
-    Hstar_minus_fn = lambda p: jnp.minimum(p, 0.0) **2/ c_in_H/2 - f_in_H/2
-    Hstar_plus_fn = lambda p: jnp.maximum(p, 0.0) **2/ c_in_H/2 - f_in_H/2
+    Hstar_minus_fn_general = lambda p, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H/2 - f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_fn_general = lambda p, t_arr: jnp.maximum(p, 0.0) **2/ c_in_H/2 - f_in_H_fn(x_arr, t_arr)/2
     Hstar_minus_prox_fn = lambda p, t: jnp.minimum(p / (1+t/c_in_H), 0.0)
     Hstar_plus_prox_fn = lambda p, t: jnp.maximum(p / (1+t/c_in_H), 0.0)
-    fns_dict = {'Hstar_minus_fn': Hstar_minus_fn, 'Hstar_plus_fn': Hstar_plus_fn,
+    fns_dict = {'Hstar_minus_fn_general': Hstar_minus_fn_general, 'Hstar_plus_fn_general': Hstar_plus_fn_general,
                 'Hstar_minus_prox_fn': Hstar_minus_prox_fn, 'Hstar_plus_prox_fn': Hstar_plus_prox_fn}
   else: # m method
     raise NotImplementedError
 
-  H_plus_fn = lambda p: c_in_H * jnp.maximum(p,0) **2/2 + f_in_H/2
-  H_minus_fn = lambda p: c_in_H * jnp.minimum(p,0) **2/2 + f_in_H/2
-  fns_dict['H_plus_fn'] = H_plus_fn
-  fns_dict['H_minus_fn'] = H_minus_fn
+  H_plus_fn = lambda p, t_arr: c_in_H * jnp.maximum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2
+  H_minus_fn = lambda p, t_arr: c_in_H * jnp.minimum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2
+  fns_dict['H_plus_fn_general'] = H_plus_fn
+  fns_dict['H_minus_fn_general'] = H_minus_fn
 
   ndim = 1
   results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
@@ -78,6 +85,16 @@ def main(argv):
   
   if ifsave:
     save_analysis.save(save_dir, filename_prefix, (results, errs_none))
+
+  print(results[-1][-1], flush=True)
+  print('phi.shape: ', results[-1][-1].shape, flush=True)
+  # plot
+  plt.figure()
+  plt.contourf(results[-1][-1])
+  plt.colorbar()
+  plt.savefig('pdhg_test.png')
+  plt.close()
+
 
 
 

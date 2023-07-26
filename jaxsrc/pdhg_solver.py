@@ -237,6 +237,15 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
   
   for i in range(nt_PDHG):
     print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
+    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:,None]  # [time_step_per_PDHG,1]
+    Hstar_minus_fn = lambda x: fns_dict['Hstar_minus_fn_general'](x, t_arr)
+    Hstar_plus_fn = lambda x: fns_dict['Hstar_plus_fn_general'](x, t_arr)
+    H_plus_fn = lambda x: fns_dict['H_plus_fn_general'](x, t_arr)
+    H_minus_fn = lambda x: fns_dict['H_minus_fn_general'](x, t_arr)
+    fns_dict['Hstar_minus_fn'] = Hstar_minus_fn
+    fns_dict['Hstar_plus_fn'] = Hstar_plus_fn
+    fns_dict['H_plus_fn'] = H_plus_fn
+    fns_dict['H_minus_fn'] = H_minus_fn
     results_all, _ = pdhg_fn(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
                                     dx, dt, c_on_rho, fns_dict,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
