@@ -134,7 +134,7 @@ def Dxx_increasedim(rho, dx):
   return out
 
 def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
-                   dx, dt, c_on_rho, fns_dict, epsl = 0.0, dy = 0.0,
+                   dx, dt, c_on_rho, fns_dict, x_arr, t_arr, epsl = 0.0, dy = 0.0,
                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9):
   '''
   @ parameters:
@@ -147,8 +147,9 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     v0: [vp0, vm0], where vp0 and vm0 are [nt-1, nx] (if using m method, this is [m0,0], where m0 is [nt-1, nx])
     dx, dt, c_on_rho: scalar
     fns_dict: dict of functions, if using vmethod, should contain Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn
-                      if using mmethod, should contain vectors f_in_H: [1, nx], c_in_H: [1, nx]
                       in both cases, should contain H_plus_fn, H_minus_fn
+    f_in_H: [1, nx] or [nt-1, nx]
+    c_in_H: [1, nx] or [nt-1, nx]
     epsl: scalar, diffusion coefficient
     dy: scalar, placeholder for 2d case
     N_maxiter: int, maximum number of iterations
@@ -180,7 +181,8 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau_phi, dt, dx, fv, epsl)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
-    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, fns_dict)
+    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, 
+                                                fns_dict, x_arr, t_arr)
 
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
@@ -190,7 +192,7 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     err2_vm = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
     err2 = jnp.sqrt(err2_rho*err2_rho + err2_vp*err2_vp + err2_vm*err2_vm)
     # err3: equation error
-    HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dx, H_plus_fn, H_minus_fn, epsl)
+    HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dx, H_plus_fn, H_minus_fn, epsl, x_arr, t_arr)
     err3 = jnp.mean(jnp.abs(HJ_residual))
     
     error = jnp.array([err1, err2,err3])
@@ -216,7 +218,7 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
   return results_all, jnp.array(error_all)
         
 
-def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
+def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nx, ndim,
                     g, dx, dt, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
                     epsl = 0.0, stepsz_param=0.9, dy = 0.0):
@@ -237,17 +239,9 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
   
   for i in range(nt_PDHG):
     print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
-    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:,None]  # [time_step_per_PDHG,1]
-    Hstar_minus_fn = lambda x: fns_dict['Hstar_minus_fn_general'](x, t_arr)
-    Hstar_plus_fn = lambda x: fns_dict['Hstar_plus_fn_general'](x, t_arr)
-    H_plus_fn = lambda x: fns_dict['H_plus_fn_general'](x, t_arr)
-    H_minus_fn = lambda x: fns_dict['H_minus_fn_general'](x, t_arr)
-    fns_dict['Hstar_minus_fn'] = Hstar_minus_fn
-    fns_dict['Hstar_plus_fn'] = Hstar_plus_fn
-    fns_dict['H_plus_fn'] = H_plus_fn
-    fns_dict['H_minus_fn'] = H_minus_fn
+    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:,None]  # [time_step_per_PDHG-1, 1]
     results_all, _ = pdhg_fn(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
-                                    dx, dt, c_on_rho, fns_dict,
+                                    dx, dt, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                                     epsl = epsl, stepsz_param=stepsz_param, dy = dy)
     _, v_curr, rho_curr, _, phi_curr = results_all[-1]
@@ -266,64 +260,56 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
 def main(argv):
   import pdhg1d_m_2var
   import pdhg1d_v_2var
+  from solver import set_up_example_fns
+  import save_analysis
 
   epsl = FLAGS.epsl
   vmethod = FLAGS.vmethod
+  stepsz_param = FLAGS.stepsz_param
 
-  nt = 7
+  nt = 6
   nx = 10
-  time_step_per_PDHG = 3
+  time_step_per_PDHG = 2
 
   N_maxiter = 2001
   print_freq = 100
 
+  egno = 0
   eps = 1e-6
   T = 1
   x_period = 2
   c_on_rho = 10.0
-  alpha = 2 * jnp.pi / x_period
-  J = lambda x: jnp.sin(alpha * x)
-  f_in_H_fn = lambda x: 0*x
-  c_in_H_fn = lambda x: 0*x + 1
+  ndim = 1
+
+  J, fns_dict = set_up_example_fns(egno, ndim, x_period, 2)
 
   dx = x_period / (nx)
   dt = T / (nt-1)
-  x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:]  # [1, nx]
+  x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx,1]
   g = J(x_arr)  # [1, nx]
-  f_in_H = f_in_H_fn(x_arr)  # [1, nx]
-  c_in_H = c_in_H_fn(x_arr)  # [1, nx]
 
   if vmethod == 1: # v method
     fn_update_primal = pdhg1d_v_2var.update_primal_1d
     fn_update_dual = pdhg1d_v_2var.update_dual_1d
-    Hstar_minus_fn = lambda p: 0*p - f_in_H/2
-    Hstar_plus_fn = lambda p: 0*p - f_in_H/2
-    Hstar_minus_prox_fn = lambda p, t: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H)
-    Hstar_plus_prox_fn = lambda p, t: jnp.maximum(jnp.minimum(p, c_in_H), 0.0)
-    fns_dict = {'Hstar_minus_fn': Hstar_minus_fn, 'Hstar_plus_fn': Hstar_plus_fn,
-                'Hstar_minus_prox_fn': Hstar_minus_prox_fn, 'Hstar_plus_prox_fn': Hstar_plus_prox_fn}
-    stepsz_param = 0.1
+    # stepsz_param = 0.1
   else: # m method
-    fn_update_primal = pdhg1d_m_2var.update_primal
-    fn_update_dual = pdhg1d_m_2var.update_dual
-    fns_dict = {'f_in_H': f_in_H, 'c_in_H': c_in_H}
-    stepsz_param = 0.9
-
-  H_plus_fn = lambda x: c_in_H * jnp.maximum(x, 0.0) + f_in_H
-  H_minus_fn = lambda x: -c_in_H * jnp.minimum(x, 0.0) + f_in_H
-  fns_dict['H_plus_fn'] = H_plus_fn
-  fns_dict['H_minus_fn'] = H_minus_fn
-
-  ndim = 1
-  PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, nt, nx, ndim,
+    fn_update_primal = pdhg1d_m_2var.update_primal_1d
+    fn_update_dual = pdhg1d_m_2var.update_dual_1d
+    # stepsz_param = 0.9
+  
+  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nx, ndim,
                     g, dx, dt, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param, dy = 0.0)
+  print('phi: ', results[-1][-1], flush=True)
+
+  # save_analysis.save('test', 'results_vmethod_{}_orderswitched'.format(vmethod), (results, errs_none))
 
 if __name__ == '__main__':
   from absl import app, flags, logging
   FLAGS = flags.FLAGS
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
+  flags.DEFINE_float('stepsz_param', 0.9, 'stepsize in pdhg')
   flags.DEFINE_integer('vmethod', 0, '1 if using vmethod, 0 if using mmethod')
 
   app.run(main)

@@ -193,6 +193,7 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   @ return:
     J, f_in_H_fn, c_in_H_fn: functions
   '''
+
   if ndim == 1:
     alpha = 2 * jnp.pi / x_period
   else:
@@ -200,32 +201,79 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   
   if egno == 3:
     J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
-  else:
+  elif egno < 10:
     J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
+  elif egno == 11:
+    J = lambda x: 0 * x[...,0]
+  elif egno == 12:
+    J = lambda x: -jnp.sum(x**2, axis=-1)/10
+  else:
+    raise ValueError("egno {} not implemented".format(egno))
 
-  if egno == 1:
+  if egno == 0:  # x-indep case
+    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 1:
     # example 1
-    f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
+    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
   elif egno == 2:
     # example 2
-    f_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 0:  # x-indep case
-    f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+    f_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   elif egno == 3:  # combine 1 and 2
     # f_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
     # f_in_H_fn = lambda x: jnp.sum((x-1)**2/2, axis = -1)
-    f_in_H_fn = lambda x: jnp.sum(jnp.sin(alpha * x + 0.3), axis = -1) 
-    c_in_H_fn = lambda x: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-
+    f_in_H_fn = lambda x, t: jnp.sum(jnp.sin(alpha * x + 0.3), axis = -1) 
+    c_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
   elif egno == 10:  # quad case, no f and c
     f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 11 or egno == 12:
+    f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t[...,0] - 0.5)**2/2, (x[...,0]+x_period - t[...,0] - 0.5)**2/2), 
+                                          (x[...,0] -x_period - t[...,0] - 0.5)**2/2)
+    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
-  return J, f_in_H_fn, c_in_H_fn
+
+  # omit the indicator function
+  # note: dim of p is [nt-1, nx]
+  if egno < 10:
+    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) + f_in_H_fn(x_arr, t_arr)/2
+    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) + f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2 # + indicator(p>=0)
+    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2 # + indicator(p<=0)
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(jnp.maximum(p, 0.0), c_in_H_fn(x_arr, t_arr))
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H_fn(x_arr, t_arr))
+    # # test: switch the order of plus and minus
+    # H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) + f_in_H_fn(x_arr, t_arr)/2
+    # H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) + f_in_H_fn(x_arr, t_arr)/2
+    # Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2 # + indicator(p>=0)
+    # Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2 # + indicator(p<=0)
+    # Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(jnp.maximum(p, 0.0), c_in_H_fn(x_arr, t_arr))
+    # Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H_fn(x_arr, t_arr))
+  elif egno < 20:
+    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2
+    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2
+    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
+    # # test: switch the order of plus and minus
+    # H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2
+    # H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2
+    # Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2
+    # Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2
+    # Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
+    # Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
+  else:
+    raise ValueError("egno {} not implemented".format(egno))
+  
+  fns_dict = {'f_in_H_fn': f_in_H_fn, 'c_in_H_fn': c_in_H_fn, 
+              'H_plus_fn': H_plus_fn, 'H_minus_fn': H_minus_fn,
+              'Hstar_plus_fn': Hstar_plus_fn, 'Hstar_minus_fn': Hstar_minus_fn,
+              'Hstar_plus_prox_fn': Hstar_plus_prox_fn, 'Hstar_minus_prox_fn': Hstar_minus_prox_fn}
+  return J, fns_dict
 
 
 

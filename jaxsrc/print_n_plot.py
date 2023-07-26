@@ -8,6 +8,7 @@ import pickle
 import matplotlib.pyplot as plt
 import os
 from solver import set_up_example_fns
+from save_analysis import compute_HJ_residual_EO_1d_general
 from functools import partial
 
 def H_L1_true_sol_1d(x, t, fn_J):
@@ -48,7 +49,31 @@ def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g, epsl = 0.0):
         H_1norm = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
         H_val = c_in_H * H_1norm + f_in_H
         diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2) / 2
-        phi.append(phi[i] - dt * H_val - dt * diffusion)
+        phi.append(phi[i] - dt * H_val + dt * diffusion)
+    phi_arr = jnp.stack(phi, axis = 0)
+    print("phi dimension {}".format(jnp.shape(phi_arr)))
+    print("phi {}".format(phi_arr))
+    return phi_arr  # TODO: check dimension
+
+def compute_EO_forward_solution_1d_general(nt, dx, dt, H_plus, H_minus, g, x_arr, epsl = 0.0):
+    '''
+    @parameters:
+        nt: integers
+        dx, dt: floats
+        f_in_H, c_in_H, g: [nx]
+        g: [nx]
+        epsl: float, diffusion coefficient
+    @return:
+        phi: [nt, nx]
+    '''
+    phi = []
+    phi.append(g)
+    for i in range(nt-1):
+        dphidx_left = (phi[i] - jnp.roll(phi[i], 1))/dx
+        dphidx_right = (jnp.roll(phi[i], -1) - phi[i])/dx
+        H_val = H_plus(dphidx_left, x_arr, i*dt) + H_minus(dphidx_right, x_arr, i*dt)
+        diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2) / 2
+        phi.append(phi[i] - dt * H_val + dt * diffusion)
     phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
     print("phi {}".format(phi_arr))
@@ -141,7 +166,7 @@ def compute_err_2d(phi, true_soln):
     err_l1_rel = err_l1/ jnp.mean(jnp.abs(phi_true))
     return err_l1, err_l1_rel, error
 
-def plot_solution_1d(phi, error, nt, nx, T, x_period, figname):
+def plot_solution_1d(phi, error, nt, nx, T, x_period, figname, epsl = 0):
     '''
     @ parameters:
         phi, error: [nt, nx]
@@ -149,6 +174,13 @@ def plot_solution_1d(phi, error, nt, nx, T, x_period, figname):
         T, x_period: float
         figname: string for saving figure
     '''
+    name_prefix = 'nt{}_nx{}'.format(nt, nx)
+    if epsl == 0:
+      name_prefix += '_epsl0_'
+    elif epsl == 0.1:
+      name_prefix += '_epsl0p1_'
+    else:
+      raise ValueError("epsl must be 0 or 0.1")
     x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)
     t_arr = np.linspace(0.0, T, num = nt, endpoint = True)
     t_mesh, x_mesh = np.meshgrid(t_arr, x_arr)
@@ -162,7 +194,7 @@ def plot_solution_1d(phi, error, nt, nx, T, x_period, figname):
     plt.colorbar()
     plt.xlabel('x')
     plt.ylabel('t')
-    plt.savefig(figname + 'nt{}_nx{}_solution.png'.format(nt, nx))
+    plt.savefig(figname + name_prefix + 'solution.png')
     # plot error
     err_trans = einshape('ij->ji', error)  # [nx, nt]
     err_np = jax.device_get(jnp.concatenate([err_trans, err_trans[0:1,:]], axis = 0))  # [nx+1, nt]
@@ -171,7 +203,7 @@ def plot_solution_1d(phi, error, nt, nx, T, x_period, figname):
     plt.colorbar()
     plt.xlabel('x')
     plt.ylabel('t')
-    plt.savefig(figname + 'nt{}_nx{}_error.png'.format(nt, nx))
+    plt.savefig(figname + name_prefix + 'error.png')
 
 
 def plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname):
@@ -215,13 +247,14 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
 
 def get_cfl_condition_1d(nx_dense, T, x_period, epsl=0):
     dx_dense = x_period / nx_dense
-    dt_dense = 1/(epsl/2 / (dx_dense**2) + 2/dx_dense)
+    dt_dense = 0.9/(epsl/2 / (dx_dense**2) + 2/dx_dense)
     nt_dense = int(T / dt_dense) + 2
     return nt_dense
 
 
 def compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, y_period, epsl = 0.0):
-    J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
+    J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period)
+    # J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
     dx_dense = x_period / nx_dense
     dy_dense = y_period / ny_dense
     dt_dense = T / (nt_dense - 1)
@@ -229,12 +262,12 @@ def compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, 
     print('nx dense {}, ny dense {}, nt dense {}'.format(nx_dense, ny_dense, nt_dense))
     
     if ndim == 1:
-        x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
-        x_arr_1d = jnp.array(x_arr_dense[:-1, None])  # [nx_dense, 1]
-        g = J(x_arr_1d)  # [nx_dense]
-        f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
-        c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
-        print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
+        # x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
+        # x_arr_1d = jnp.array(x_arr_dense[:-1, None])  # [nx_dense, 1]
+        x_arr_1d = jnp.linspace(0.0, x_period - dx_dense, num = nx_dense)[:,None]  # [nx_dense, 1]
+        # f_in_H = f_in_H_fn(x_arr_1d)  # [nx_dense]
+        # c_in_H = c_in_H_fn(x_arr_1d)  # [nx_dense]
+        # print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
         if egno == 0 and epsl == 0.0:
             t_arr_1d = jnp.linspace(0.0, T, num = nt_dense)  # [nt_dense]
             phi_dense_list = []
@@ -242,17 +275,24 @@ def compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, 
                 phi_dense_list.append(H_L1_true_sol_1d_batch(x_arr_1d, t_arr_1d[i] + jnp.zeros(nx_dense), J))
             phi_dense = jnp.stack(phi_dense_list, axis = 0)
         else:
-            phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
+            g = J(x_arr_1d)  # [nx_dense]
+            print('shape g {}'.format(jnp.shape(g)))
+            phi_dense = compute_EO_forward_solution_1d_general(nt_dense, dx_dense, dt_dense, 
+                                                               fns_dict['H_plus_fn'], fns_dict['H_minus_fn'],
+                                                               g, x_arr_1d, epsl = 0.0)
+            print('shape phi_dense {}'.format(jnp.shape(phi_dense)))
+            # phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
     elif ndim == 2:
-        x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
-        y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
-        x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense)
-        x_arr_2d = jnp.array(np.concatenate([x_mesh_dense[:-1,:-1, None], y_mesh_dense[:-1, :-1, None]], axis = -1))  # [nx_dense, ny_dense, 2]
-        g = J(x_arr_2d)  # [nx_dense, ny_dense]
-        f_in_H = f_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
-        c_in_H = c_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
-        print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
-        phi_dense = compute_EO_forward_solution_2d(nt_dense, dx_dense, dy_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
+        # x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
+        # y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
+        # x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense)
+        # x_arr_2d = jnp.array(np.concatenate([x_mesh_dense[:-1,:-1, None], y_mesh_dense[:-1, :-1, None]], axis = -1))  # [nx_dense, ny_dense, 2]
+        # g = J(x_arr_2d)  # [nx_dense, ny_dense]
+        # f_in_H = f_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
+        # c_in_H = c_in_H_fn(x_arr_2d)  # [nx_dense, ny_dense]
+        # print("shape g {}, f_in_H {}, c_in_H {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
+        # phi_dense = compute_EO_forward_solution_2d(nt_dense, dx_dense, dy_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
+        raise NotImplementedError
     else:
         raise ValueError("ndim should be 1 or 2")
     return phi_dense
@@ -269,6 +309,18 @@ def main(argv):
     x_period = 2.0
     y_period = 2.0
 
+    dt = T / (nt - 1)
+    dx = x_period / nx
+
+    if ndim == 1:
+      nx_dense, ny_dense = 800, 800
+      nt_dense_min = get_cfl_condition_1d(nx_dense, T, x_period, epsl=epsl)
+      nt_dense = ((nt_dense_min-1) // (nt - 1) + 1) * (nt - 1) + 1
+    else:
+      raise NotImplementedError
+
+    J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period)
+
     figname = "./eg{}_{}d/".format(egno, ndim)
     if not os.path.exists(figname):
         os.makedirs(figname)
@@ -278,20 +330,23 @@ def main(argv):
     # filename = saved_file_dir + '/' + saved_filename_prefix + '_iter{}.pickle'.format(iterno)
     filename = FLAGS.filename
     phi = read_solution(filename)
-    # TODO: modify this when coding 2d
-    nx_dense, ny_dense = 800, 800
-    nt_dense_min = get_cfl_condition_1d(nx_dense, T, x_period, epsl=epsl)
-    nt_dense = ((nt_dense_min-1) // (nt - 1) + 1) * (nt - 1) + 1
     phi_dense = compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, y_period, epsl=epsl)
 
     # compute error
-    if ndim == 1:        
+    if ndim == 1:
+        x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
+        t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None]  # [nt-1, 1]
         err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
-        plot_solution_1d(phi, error, nt, nx, T, x_period, figname)
+        H_plus_fn = fns_dict['H_plus_fn']
+        H_minus_fn = fns_dict['H_minus_fn']
+        HJ_residual = compute_HJ_residual_EO_1d_general(phi, dt, dx, H_plus_fn, H_minus_fn, epsl, x_arr, t_arr)
+        plot_solution_1d(phi, error, nt, nx, T, x_period, figname, epsl=epsl)
     elif ndim == 2:
         err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
         plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname)
-    print("err_l1 {:.2E}, err_l1_rel {:.2E}".format(err_l1, err_l1_rel))
+
+    print('row 1: HJ residual {:.2E}'.format(jnp.mean(jnp.abs(HJ_residual))))
+    print("row 2: err_l1_rel {:.2E}".format(err_l1_rel))
     
 
 if __name__ == "__main__":
