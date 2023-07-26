@@ -172,8 +172,8 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
   Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
   fv = jnp.fft.fft(Lap_vec)  # [nx]
 
-  H_plus_fn = fns_dict['H_plus_fn']
-  H_minus_fn = fns_dict['H_minus_fn']
+  H_plus_fn = fns_dict.H_plus_fn
+  H_minus_fn = fns_dict.H_minus_fn
   error_all = []
   results_all = []
 

@@ -52,26 +52,34 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau, dt, dx
   # phi_next = jnp.concatenate([phi_prev[0:1,:], phi_next_1], axis = 0)
   return phi_next
 
-# @partial(jax.jit, static_argnames=("fns_dict",))
+@partial(jax.jit, static_argnames=("Hstar_plus_prox_fn", "Hstar_minus_prox_fn", "Hstar_plus_fn", "Hstar_minus_fn"))
+def update_dual_1d_oneiter(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, epsl, 
+                  x_arr, t_arr, Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn):
+  vp_next, vm_next = update_v_1d(vp_prev, vm_prev, phi_bar, rho_prev, sigma, dx, c_on_rho, 
+                                Hstar_plus_prox_fn, Hstar_minus_prox_fn, x_arr, t_arr)
+  rho_next = update_rho_1d(rho_prev, phi_bar, vp_next, vm_next, sigma, dt, dx, epsl, c_on_rho,
+                        Hstar_plus_fn, Hstar_minus_fn, x_arr, t_arr)
+  err1 = jnp.linalg.norm(vp_next - vp_prev) / jnp.maximum(jnp.linalg.norm(vp_prev), 1.0)
+  err2 = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
+  err3 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+  err = jnp.maximum(jnp.maximum(err1, err2), err3)
+  return rho_next, vp_next, vm_next, err
+
+
 def update_dual_1d(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, epsl, fns_dict,
                   x_arr, t_arr, rho_v_iters=10, eps=1e-7):
   '''
   @ parameters:
   fns_dict: dict of functions, should contain Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn
   '''
-  Hstar_plus_prox_fn = fns_dict['Hstar_plus_prox_fn']
-  Hstar_minus_prox_fn = fns_dict['Hstar_minus_prox_fn']
-  Hstar_plus_fn = fns_dict['Hstar_plus_fn']
-  Hstar_minus_fn = fns_dict['Hstar_minus_fn']
+  Hstar_plus_prox_fn = fns_dict.Hstar_plus_prox_fn
+  Hstar_minus_prox_fn = fns_dict.Hstar_minus_prox_fn
+  Hstar_plus_fn = fns_dict.Hstar_plus_fn
+  Hstar_minus_fn = fns_dict.Hstar_minus_fn
   for j in range(rho_v_iters):
-    vp_next, vm_next = update_v_1d(vp_prev, vm_prev, phi_bar, rho_prev, sigma, dx, c_on_rho, 
-                                Hstar_plus_prox_fn, Hstar_minus_prox_fn, x_arr, t_arr)
-    rho_next = update_rho_1d(rho_prev, phi_bar, vp_next, vm_next, sigma, dt, dx, epsl, c_on_rho,
-                          Hstar_plus_fn, Hstar_minus_fn, x_arr, t_arr)
-    err1 = jnp.linalg.norm(vp_next - vp_prev) / jnp.maximum(jnp.linalg.norm(vp_prev), 1.0)
-    err2 = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
-    err3 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
-    if err1 < eps and err2 < eps and err3 < eps:
+    rho_next, vp_next, vm_next, err = update_dual_1d_oneiter(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, sigma, dt, dx, epsl,
+                                                              x_arr, t_arr, Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn)
+    if err < eps:
       break
     rho_prev = rho_next
     vp_prev = vp_next

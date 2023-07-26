@@ -68,9 +68,10 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, m_prev, dummy_prev, tau, dt, 
   phi_next = jnp.concatenate([phi_prev[0:1,:], phi_next_1], axis = 0)
   return phi_next
 
+@partial(jax.jit, static_argnames=("fns_dict",))
 def update_dual_1d(phi_bar, rho_prev, c_on_rho, m_prev, dummy_prev, sigma, dt, dx, epsl, fns_dict, x_arr, t_arr):
-  f_in_H = fns_dict['f_in_H_fn'](x_arr, t_arr)
-  c_in_H = fns_dict['c_in_H_fn'](x_arr, t_arr)
+  f_in_H = fns_dict.f_in_H_fn(x_arr, t_arr)
+  c_in_H = fns_dict.c_in_H_fn(x_arr, t_arr)
   rho_candidates = []
   z = m_prev + sigma * Dx_right_decreasedim(phi_bar, dx)  # [nt-1, nx]
   z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]

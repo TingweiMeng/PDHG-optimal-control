@@ -3,6 +3,8 @@ import jax.numpy as jnp
 from functools import partial
 from einshape import jax_einshape as einshape
 import jax
+from collections import namedtuple
+
 jax.config.update("jax_enable_x64", True)
 
 
@@ -193,7 +195,6 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   @ return:
     J, f_in_H_fn, c_in_H_fn: functions
   '''
-
   if ndim == 1:
     alpha = 2 * jnp.pi / x_period
   else:
@@ -227,12 +228,12 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
     f_in_H_fn = lambda x, t: jnp.sum(jnp.sin(alpha * x + 0.3), axis = -1) 
     c_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
   elif egno == 10:  # quad case, no f and c
-    f_in_H_fn = lambda x: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   elif egno == 11 or egno == 12:
-    f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t[...,0] - 0.5)**2/2, (x[...,0]+x_period - t[...,0] - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t[...,0] - 0.5)**2/2)
-    c_in_H_fn = lambda x: jnp.zeros_like(x[...,0]) + 1
+    f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
+                                          (x[...,0] -x_period - t - 0.5)**2/2)
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
 
@@ -269,10 +270,17 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
-  fns_dict = {'f_in_H_fn': f_in_H_fn, 'c_in_H_fn': c_in_H_fn, 
-              'H_plus_fn': H_plus_fn, 'H_minus_fn': H_minus_fn,
-              'Hstar_plus_fn': Hstar_plus_fn, 'Hstar_minus_fn': Hstar_minus_fn,
-              'Hstar_plus_prox_fn': Hstar_plus_prox_fn, 'Hstar_minus_prox_fn': Hstar_minus_prox_fn}
+  Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+                                       'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                       'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
+  fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+                       H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
+                       Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                       Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
+  # fns_dict = {'f_in_H_fn': f_in_H_fn, 'c_in_H_fn': c_in_H_fn, 
+  #             'H_plus_fn': H_plus_fn, 'H_minus_fn': H_minus_fn,
+  #             'Hstar_plus_fn': Hstar_plus_fn, 'Hstar_minus_fn': Hstar_minus_fn,
+  #             'Hstar_plus_prox_fn': Hstar_plus_prox_fn, 'Hstar_minus_prox_fn': Hstar_minus_prox_fn}
   return J, fns_dict
 
 

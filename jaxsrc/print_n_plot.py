@@ -278,7 +278,7 @@ def compute_ground_truth(egno, nx_dense, ny_dense, nt_dense, ndim, T, x_period, 
             g = J(x_arr_1d)  # [nx_dense]
             print('shape g {}'.format(jnp.shape(g)))
             phi_dense = compute_EO_forward_solution_1d_general(nt_dense, dx_dense, dt_dense, 
-                                                               fns_dict['H_plus_fn'], fns_dict['H_minus_fn'],
+                                                               fns_dict.H_plus_fn, fns_dict.H_minus_fn,
                                                                g, x_arr_1d, epsl = 0.0)
             print('shape phi_dense {}'.format(jnp.shape(phi_dense)))
             # phi_dense = compute_EO_forward_solution_1d(nt_dense, dx_dense, dt_dense, f_in_H, c_in_H, g, epsl=epsl)
@@ -337,8 +337,8 @@ def main(argv):
         x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
         t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None]  # [nt-1, 1]
         err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
-        H_plus_fn = fns_dict['H_plus_fn']
-        H_minus_fn = fns_dict['H_minus_fn']
+        H_plus_fn = fns_dict.H_plus_fn
+        H_minus_fn = fns_dict.H_minus_fn
         HJ_residual = compute_HJ_residual_EO_1d_general(phi, dt, dx, H_plus_fn, H_minus_fn, epsl, x_arr, t_arr)
         plot_solution_1d(phi, error, nt, nx, T, x_period, figname, epsl=epsl)
     elif ndim == 2:
