@@ -46,19 +46,19 @@ def main(argv):
   x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:]  # [1, nx]
   # t_arr = jnp.linspace(dt, T, num = nt-1)[:,None]  # [nt-1, 1]
 
-  if egno == 11: # v method
-    alpha = 2 * jnp.pi / x_period
-    # J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
-    J = lambda x: 0 * x
-    # f_in_H_fn = lambda p: jnp.zeros_like(p)
-    # c_in_H_fn = lambda p: jnp.zeros_like(p) + 1
+  # alpha = 2 * jnp.pi / x_period
+  # J = lambda x: jnp.sin(alpha * x)  # input [nx] output [nx]
+  # f_in_H_fn = lambda p: jnp.zeros_like(p)
+  # c_in_H_fn = lambda p: jnp.zeros_like(p) + 1
+  if egno == 11 or egno == 12: # v method 
+    if egno == 11:
+      J = lambda x: 0 * x  
+    else:
+      J = lambda x: -x**2/10
     f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x - t - 0.5)**2/2, (x+2 - t - 0.5)**2/2), (x-2 - t - 0.5)**2/2)
     c_in_H_fn = lambda x: jnp.zeros_like(x) + 1
-    # fn_H_plus = lambda p,x,t: c_in_H_fn(x) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x,t)/2
-    # fn_H_minus = lambda p,x,t: c_in_H_fn(x) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x,t)/2
 
     g = J(x_arr)  # [1, nx]
-    # f_in_H = f_in_H_fn(x_arr, t_arr)  # [nt-1, nx]
     c_in_H = c_in_H_fn(x_arr)  # [1, nx]
 
     fn_update_primal = pdhg1d_v_2var.update_primal_1d
@@ -82,18 +82,8 @@ def main(argv):
                     g, dx, dt, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param, dy = 0.0)
-  
   if ifsave:
     save_analysis.save(save_dir, filename_prefix, (results, errs_none))
-
-  print(results[-1][-1], flush=True)
-  print('phi.shape: ', results[-1][-1].shape, flush=True)
-  # plot
-  plt.figure()
-  plt.contourf(results[-1][-1])
-  plt.colorbar()
-  plt.savefig('pdhg_test.png')
-  plt.close()
 
 
 
