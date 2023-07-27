@@ -8,7 +8,6 @@ import os
 import solver
 from solver import interpolation_x, interpolation_t
 import pickle
-from save_analysis import compute_HJ_residual_EO_1d_xdep
 import matplotlib.pyplot as plt
 from pdhg_solver import Dx_left_increasedim, Dx_right_decreasedim, Dt_decreasedim, Dt_increasedim, Dxx_decreasedim, Dxx_increasedim
 
@@ -56,7 +55,9 @@ def get_minimizer_ind(rho_candidates, shift_term, c, z, c_in_H):
   return rho_min[0,:,:]
 
 @jax.jit
-def update_primal_1d(phi_prev, rho_prev, c_on_rho, m_prev, dummy_prev, tau, dt, dx, fv, epsl):
+def update_primal_1d(phi_prev, rho_prev, c_on_rho, m_prev_ls, tau, dt, dspatial, fv, epsl):
+  m_prev = m_prev_ls[0]
+  dx = dspatial[0]
   delta_phi = - tau * (Dx_left_increasedim(m_prev, dx) + Dt_increasedim(rho_prev, dt) + epsl * Dxx_increasedim(rho_prev, dx)) # [nt, nx]
   # phi_next = phi_prev + solver.Poisson_eqt_solver(delta_phi, fv, dt)
   reg_param = 10
@@ -69,7 +70,9 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, m_prev, dummy_prev, tau, dt, 
   return phi_next
 
 @partial(jax.jit, static_argnames=("fns_dict",))
-def update_dual_1d(phi_bar, rho_prev, c_on_rho, m_prev, dummy_prev, sigma, dt, dx, epsl, fns_dict, x_arr, t_arr):
+def update_dual_1d(phi_bar, rho_prev, c_on_rho, m_prev_ls, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim):
+  m_prev = m_prev_ls[0]
+  dx = dspatial[0]
   f_in_H = fns_dict.f_in_H_fn(x_arr, t_arr)
   c_in_H = fns_dict.c_in_H_fn(x_arr, t_arr)
   rho_candidates = []
@@ -93,4 +96,4 @@ def update_dual_1d(phi_bar, rho_prev, c_on_rho, m_prev, dummy_prev, sigma, dt, d
   # m is truncation of vec1 into [-(rho_i+c)c(xi), (rho_{i+1}+c)c(x_{i+1})]
   m_next = jnp.minimum(jnp.maximum(z, -(rho_next + c_on_rho) * c_in_H), 
                         (jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1))
-  return rho_next, m_next, 0*m_next
+  return rho_next, (m_next,)

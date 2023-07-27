@@ -64,6 +64,19 @@ def Poisson_eqt_solver(source_term, fv, dt):
   phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
   return phi_update
 
+def Poisson_eqt_solver_2d(source_term, fv, dt):
+  nt, nx, ny = jnp.shape(source_term)
+  v_Fourier =  jnp.fft.fft2(source_term[1:,...], axes = (1,2)) # [nt-1, nx, ny]
+  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
+  Lap_t_diag_rep = einshape('n->nmk', Lap_t_diag, m = nx, k = ny)  # [nt-1, nx, ny]
+  thomas_b = einshape('nk->mnk', fv, m = nt-1) + Lap_t_diag_rep # [nt-1, nx, ny]
+  phi_fouir_part = tridiagonal_solve_batch_2d(dl, thomas_b, du, v_Fourier)  # [nt-1, nx, ny]
+  F_phi_updates = jnp.fft.ifft2(phi_fouir_part, axes = (1,2)).real  # [nt-1, nx, ny]
+  phi_update = jnp.concatenate([jnp.zeros((1,nx,ny)), F_phi_updates], axis = 0) # [nt, nx, ny]
+  return phi_update
+
 
 
 @partial(jax.jit, static_argnames=("Neumann_tc","Dirichlet_ic"))
@@ -208,6 +221,8 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
     J = lambda x: 0 * x[...,0]
   elif egno == 12:
     J = lambda x: -jnp.sum(x**2, axis=-1)/10
+  elif egno == 21 or egno == 22:
+    J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
   else:
     raise ValueError("egno {} not implemented".format(egno))
 
@@ -233,6 +248,9 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
   elif egno == 11 or egno == 12:
     f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
                                           (x[...,0] -x_period - t - 0.5)**2/2)
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 21 or egno == 22:
+    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
@@ -267,20 +285,44 @@ def set_up_example_fns(egno, ndim, x_period, y_period):
     # Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2
     # Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
     # Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
+  elif egno == 21:
+    H_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
+    H_plus_fn = lambda p, x_arr, t_arr: p
+    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
+    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p + 1.0
+  elif egno == 22:
+    H_minus_fn = lambda p, x_arr, t_arr: p
+    H_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
+    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
+    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p + 1.0
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
-  Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
-                                       'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                       'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
-  fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                       H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
-                       Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
-                       Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
-  # fns_dict = {'f_in_H_fn': f_in_H_fn, 'c_in_H_fn': c_in_H_fn, 
-  #             'H_plus_fn': H_plus_fn, 'H_minus_fn': H_minus_fn,
-  #             'Hstar_plus_fn': Hstar_plus_fn, 'Hstar_minus_fn': Hstar_minus_fn,
-  #             'Hstar_plus_prox_fn': Hstar_plus_prox_fn, 'Hstar_minus_prox_fn': Hstar_minus_prox_fn}
+  if ndim == 1:
+    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+                                        'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
+    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+                        H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
+                        Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
+  elif ndim == 2:
+    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+                                        'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn',
+                                        'Hxstar_plus_fn', 'Hxstar_minus_fn', 'Hystar_plus_fn', 'Hystar_minus_fn',
+                                        'Hxstar_plus_prox_fn', 'Hxstar_minus_prox_fn', 'Hystar_plus_prox_fn', 'Hystar_minus_prox_fn'])
+    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+                        Hx_plus_fn=H_plus_fn, Hx_minus_fn=H_minus_fn, Hy_plus_fn=H_plus_fn, Hy_minus_fn=H_minus_fn,
+                        Hxstar_plus_fn=Hstar_plus_fn, Hxstar_minus_fn=Hstar_minus_fn,
+                        Hystar_plus_fn=Hstar_plus_fn, Hystar_minus_fn=Hstar_minus_fn,
+                        Hxstar_plus_prox_fn=Hstar_plus_prox_fn, Hxstar_minus_prox_fn=Hstar_minus_prox_fn,
+                        Hystar_plus_prox_fn=Hstar_plus_prox_fn, Hystar_minus_prox_fn=Hstar_minus_prox_fn)
+  else:
+    raise ValueError("ndim {} not implemented".format(ndim))
   return J, fns_dict
 
 

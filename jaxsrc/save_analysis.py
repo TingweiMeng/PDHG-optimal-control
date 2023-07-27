@@ -3,27 +3,29 @@ import jax
 import jax.numpy as jnp
 import os
 
-def compute_HJ_residual_EO_1d_xdep(phi, dt, dx, f_in_H, c_in_H, epsl):
+def compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   '''
-  H is c*|p| + f, 1-dimensional
   @parameters:
     phi: [nt, nx]
     dt: scalar
-    dx: scalar
-    f_in_H: [1, nx]
-    c_in_H: [1, nx]
+    dspatial: list of scalars
+    fns_dict: constaining H_plus_fn, H_minus_fn: functions taking p([nt, nx]), x([1,nx]), t([nt-1,1]) and returning [nt, nx]
+    epsl: scalar, diffusion coefficient
+    x_arr, t_arr: [1, nx], [nt-1, 1]
   @ return:
     HJ_residual: [nt-1, nx]
   '''
+  dx = dspatial[0]
+  H_plus_fn = fns_dict.H_plus_fn
+  H_minus_fn = fns_dict.H_minus_fn
   dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
   dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
-  H_val = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
-  H_val = c_in_H * H_val + f_in_H
+  H_val = H_plus_fn(dphidx_left[1:,:], x_arr, t_arr) + H_minus_fn(dphidx_right[1:,:], x_arr, t_arr)  # [nt-1, nx]
   Lap = (dphidx_right - dphidx_left)/dx
-  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val[1:,:] - epsl * Lap[1:,:]
+  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val - epsl * Lap[1:,:]
   return HJ_residual
 
-def compute_HJ_residual_EO_1d_general(phi, dt, dx, H_plus, H_minus, epsl, x_arr, t_arr):
+def compute_HJ_residual_EO_2d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   '''
   H is c*|p| + f, 1-dimensional
   @parameters:
@@ -36,35 +38,19 @@ def compute_HJ_residual_EO_1d_general(phi, dt, dx, H_plus, H_minus, epsl, x_arr,
   @ return:
     HJ_residual: [nt-1, nx]
   '''
-  dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
-  dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
-  H_val = H_plus(dphidx_left[1:,:], x_arr, t_arr) + H_minus(dphidx_right[1:,:], x_arr, t_arr)  # [nt-1, nx]
-  Lap = (dphidx_right - dphidx_left)/dx
-  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val - epsl * Lap[1:,:]
-  return HJ_residual
-
-def compute_HJ_residual_EO_2d_xdep(phi, dt, dx, dy, f_in_H, c_in_H, epsl):
-  '''
-  H is c*|p| + f, 2-dimensional
-  @parameters:
-    phi: [nt, nx, ny]
-    dt: scalar
-    dx, dy: scalar
-    f_in_H: [1, nx, ny]
-    c_in_H: [1, nx, ny]
-    epsl: scalar, diffusion coefficient
-  @ return:
-    HJ_residual: [nt-1, nx, ny]
-  '''
+  dx, dy = dspatial[0], dspatial[1]
+  Hx_plus_fn = fns_dict.Hx_plus_fn
+  Hx_minus_fn = fns_dict.Hx_minus_fn
+  Hy_plus_fn = fns_dict.Hy_plus_fn
+  Hy_minus_fn = fns_dict.Hy_minus_fn
   dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
   dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
   dphidy_left = (phi - jnp.roll(phi, 1, axis = 2))/dy
   dphidy_right = (jnp.roll(phi, -1, axis=2) - phi)/dy
-  H1_val = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
-  H2_val = jnp.maximum(-dphidy_right, 0) + jnp.maximum(dphidy_left, 0)
-  H_val = c_in_H * (H1_val + H2_val) + f_in_H
-  Lap = (dphidx_right - dphidx_left) / dx + (dphidy_right - dphidy_left) / dy
-  HJ_residual = (phi[1:,...] - phi[:-1,...])/dt + H_val[1:,...] - epsl * Lap[1:,...]
+  H_val = Hx_plus_fn(dphidx_left[1:,...], x_arr, t_arr) + Hx_minus_fn(dphidx_right[1:,...], x_arr, t_arr)  # [nt-1, nx, ny]
+  H_val += Hy_plus_fn(dphidy_left[1:,...], x_arr, t_arr) + Hy_minus_fn(dphidy_right[1:,...], x_arr, t_arr)  # [nt-1, nx, ny]
+  Lap = (dphidx_right - dphidx_left)/dx + (dphidy_right - dphidy_left)/dy
+  HJ_residual = (phi[1:,...] - phi[:-1,...])/dt + H_val - epsl * Lap[1:,...]
   return HJ_residual
 
 

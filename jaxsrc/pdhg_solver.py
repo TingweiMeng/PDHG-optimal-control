@@ -8,21 +8,21 @@ import os
 import solver
 from solver import interpolation_x, interpolation_t
 import pickle
-from save_analysis import compute_HJ_residual_EO_1d_general
+from save_analysis import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
 import matplotlib.pyplot as plt
 
 @jax.jit
 def Dx_right_decreasedim(phi, dx):
   '''F phi = (phi_{k+1,i+1}-phi_{k+1,i})/dx
-  phi_{k+1,i+1} is periodic in i+1
+  phi_{k+1,i+1} is periodic in i+1. Can be also used for 2d spatial domain
   @ parameters:
-    phi: [nt, nx]
+    phi: [nt, nx] or [nt, nx, ny]
   @ return
-    out: [nt-1, nx]
+    out: [nt-1, nx] or [nt-1, nx, ny]
   '''
   phi_ip1 = jnp.roll(phi, -1, axis=1)
   out = phi_ip1 - phi
-  out = out[1:,:]/dx
+  out = out[1:,...]/dx
   return out
 
 @jax.jit
@@ -31,14 +31,14 @@ def Dx_right_increasedim(m, dx):
   m[k,i+1] is periodic in i+1
   prepend 0 in axis-0
   @ parameters:
-    m: [nt-1, nx]
+    m: [nt-1, nx] or [nt-1, nx, ny]
   @ return
-    out: [nt, nx]
+    out: [nt, nx] or [nt, nx, ny]
   '''
   m_ip1 = jnp.roll(m, -1, axis=1)
   out = -m + m_ip1
   out = out/dx
-  out = jnp.pad(out, ((1,0),(0,0)), mode = 'constant', constant_values=0.0) #prepend 0
+  out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
   return out
 
 @jax.jit
@@ -46,13 +46,13 @@ def Dx_left_decreasedim(phi, dx):
   '''F phi = (phi_{k+1,i}-phi_{k+1,i-1})/dx
   phi_{k+1,i-1} is periodic in i+1
   @ parameters:
-    phi: [nt, nx]
+    phi: [nt, nx] or [nt, nx, ny]
   @ return
-    out: [nt-1, nx]
+    out: [nt-1, nx] or [nt-1, nx, ny]
   '''
   phi_im1 = jnp.roll(phi, 1, axis=1)
   out = phi - phi_im1
-  out = out[1:,:]/dx
+  out = out[1:,...]/dx
   return out
 
 @jax.jit
@@ -61,39 +61,100 @@ def Dx_left_increasedim(m, dx):
   m[k,i-1] is periodic in i-1
   prepend 0 in axis-0
   @ parameters:
-    m: [nt-1, nx]
+    m: [nt-1, nx] or [nt-1, nx, ny]
   @ return
-    out: [nt, nx]
+    out: [nt, nx] or [nt, nx, ny]
   '''
   m_im1 = jnp.roll(m, 1, axis=1)
   out = -m_im1 + m
   out = out/dx
-  out = jnp.pad(out, ((1,0),(0,0)), mode = 'constant', constant_values=0.0) #prepend 0
+  out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
+  return out
+
+
+@jax.jit
+def Dy_right_decreasedim(phi, dy):
+  '''F phi = (phi_{k+1,:,i+1}-phi_{k+1,:,i})/dy
+  phi_{k+1,:,i+1} is periodic in i+1.
+  @ parameters:
+    phi: [nt, nx, ny]
+  @ return
+    out: [nt-1, nx, ny]
+  '''
+  phi_ip1 = jnp.roll(phi, -1, axis=2)
+  out = phi_ip1 - phi
+  out = out[1:,...]/dy
+  return out
+
+@jax.jit
+def Dy_right_increasedim(m, dy):
+  '''F m = (-m[k-1,:,i] + m[k-1,:,i+1])/dy
+  m[k,:,i+1] is periodic in i+1
+  prepend 0 in axis-0
+  @ parameters:
+    m: [nt-1, nx, ny]
+  @ return
+    out: [nt, nx, ny]
+  '''
+  m_ip1 = jnp.roll(m, -1, axis=2)
+  out = -m + m_ip1
+  out = out/dy
+  out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
+  return out
+
+@jax.jit
+def Dy_left_decreasedim(phi, dy):
+  '''F phi = (phi_{k+1,:,i}-phi_{k+1,:,i-1})/dy
+  phi_{k+1,:,i-1} is periodic in i+1
+  @ parameters:
+    phi: [nt, nx, ny]
+  @ return
+    out: [nt-1, nx, ny]
+  '''
+  phi_im1 = jnp.roll(phi, 1, axis=2)
+  out = phi - phi_im1
+  out = out[1:,...]/dy
+  return out
+
+@jax.jit
+def Dy_left_increasedim(m, dy):
+  '''F m = (-m[k,:,i-1] + m[k,:,i])/dy
+  m[k,:,i-1] is periodic in i-1
+  prepend 0 in axis-0
+  @ parameters:
+    m: [nt-1, nx, ny]
+  @ return
+    out: [nt, nx, ny]
+  '''
+  m_im1 = jnp.roll(m, 1, axis=2)
+  out = -m_im1 + m
+  out = out/dy
+  out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
   return out
 
 
 @jax.jit
 def Dt_decreasedim(phi, dt):
-  '''Dt phi = (phi_{k+1,i}-phi_{k,i})/dt
-  phi_{k+1,i} is not periodic
+  '''Dt phi = (phi_{k+1,...}-phi_{k,...})/dt
+  phi_{k+1,...} is not periodic
   @ parameters:
-    phi: [nt, nx]
+    phi: [nt, nx] or [nt, nx, ny]
   @ return
-    out: [nt-1, nx]
+    out: [nt-1, nx] or [nt-1, nx, ny]
   '''
-  phi_kp1 = phi[1:,:]
-  phi_k = phi[:-1,:]
+  phi_kp1 = phi[1:,...]
+  phi_k = phi[:-1,...]
   out = (phi_kp1 - phi_k) /dt
   return out
 
 @jax.jit
 def Dxx_decreasedim(phi, dx):
   '''Dxx phi = (phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
-  phi_{k+1,i} is not periodic
+  phi_{k+1,i} is periodic in i, but not in k
   @ parameters:
-    phi: [nt, nx]
+    phi: [nt, nx] or [nt, nx, ny]
   @ return
-    out: [nt-1, nx]
+    out: [nt-1, nx] or [nt-1, nx, ny]
   '''
   phi_kp1 = phi[1:,:]
   phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
@@ -101,19 +162,34 @@ def Dxx_decreasedim(phi, dx):
   out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dx**2
   return out
 
+@jax.jit
+def Dyy_decreasedim(phi, dy):
+  '''Dxx phi = (phi_{k+1,:,i+1}+phi_{k+1,:,i-1}-2*phi_{k+1,:,i})/dy^2
+  phi_{k+1,:,i} is periodic in i, but not in k
+  @ parameters:
+    phi: [nt, nx, ny]
+  @ return
+    out: [nt-1, nx, ny]
+  '''
+  phi_kp1 = phi[1:,...]
+  phi_ip1 = jnp.roll(phi_kp1, -1, axis=2)
+  phi_im1 = jnp.roll(phi_kp1, 1, axis=2)
+  out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dy**2
+  return out
+
 
 @jax.jit
 def Dt_increasedim(rho, dt):
-  '''F rho = (-rho[k-1,i] + rho[k,i])/dt
+  '''Dt rho = (-rho[k-1,...] + rho[k,...])/dt
             #k = 0...(nt-1)
   rho[-1,:] = 0
   @ parameters:
-    rho: [nt-1, nx]
+    rho: [nt-1, nx] or [nt-1, nx, ny]
   @ return
-    out: [nt, nx]
+    out: [nt, nx] or [nt, nx, ny]
   '''
-  rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
-  rho_k = jnp.pad(rho, ((0,1),(0,0)),  mode = 'constant', constant_values=0.0)
+  rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
+  rho_k = jnp.concatenate([rho, jnp.zeros_like(rho[0:1,...])], axis = 0) #append 0
   out = (-rho_km1 + rho_k)/dt
   return out
 
@@ -123,18 +199,34 @@ def Dxx_increasedim(rho, dx):
             #k = 0...(nt-1)
   rho[-1,:] = 0
   @ parameters:
-    rho: [nt-1, nx]
+    rho: [nt-1, nx] or [nt-1, nx, ny]
   @ return
-    out: [nt, nx]
+    out: [nt, nx] or [nt, nx, ny]
   '''
-  rho_km1 = jnp.pad(rho, ((1,0),(0,0)), mode = 'constant', constant_values=0.0)
+  rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
   rho_im1 = jnp.roll(rho_km1, 1, axis=1)
   rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
   out = (rho_ip1 + rho_im1 - 2*rho_km1) /dx**2
   return out
 
-def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
-                   dx, dt, c_on_rho, fns_dict, x_arr, t_arr, epsl = 0.0, dy = 0.0,
+@jax.jit
+def Dyy_increasedim(rho, dy):
+  '''F rho = (rho[k-1,:,i+1]+rho[k-1,:,i-1]-2*rho[k-1,:,i])/dy^2
+            #k = 0...(nt-1)
+  rho[-1,:] = 0
+  @ parameters:
+    rho: [nt-1, nx, ny]
+  @ return
+    out: [nt, nx, ny]
+  '''
+  rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
+  rho_im1 = jnp.roll(rho_km1, 1, axis=2)
+  rho_ip1 = jnp.roll(rho_km1, -1, axis=2)
+  out = (rho_ip1 + rho_im1 - 2*rho_km1) /dy**2
+  return out
+
+def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
+                   dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, epsl = 0.0,
                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9):
   '''
   @ parameters:
@@ -158,41 +250,52 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
     stepsz_param: scalar, step size parameter
   @ returns:
   '''
-  _,nx = jnp.shape(phi0)
   phi_prev = phi0
   rho_prev = rho0
-  vp_prev = v0[0]
-  vm_prev = v0[1]
+  v_prev = v0
 
   scale = 1.5
   tau_phi = stepsz_param / scale
   tau_rho = stepsz_param * scale
   
   # fft for preconditioning
-  Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
-  fv = jnp.fft.fft(Lap_vec)  # [nx]
+  if ndim == 1:
+    _,nx = jnp.shape(phi0)
+    dx = dspatial[0]
+    Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
+    fv = jnp.fft.fft(Lap_vec)  # [nx]
+  elif ndim == 2:
+    _,nx,ny = jnp.shape(phi0)
+    dx, dy = dspatial[0], dspatial[1]
+    Lap_mat = jnp.array([[-2/(dx*dx)-2/(dy*dy), 1/(dy*dy)] + [0.0] * (ny-3) + [1/(dy*dy)],
+                        [1/(dx*dx)] + [0.0] * (ny -1)] + [[0.0]* ny] * (nx-3) + \
+                        [[1/(dx*dx)] + [0.0] * (ny-1)])
+    fv = jnp.fft.fft2(Lap_mat)  # [nx, ny]
+  else:
+    raise NotImplementedError
 
-  H_plus_fn = fns_dict.H_plus_fn
-  H_minus_fn = fns_dict.H_minus_fn
   error_all = []
   results_all = []
 
   for i in range(N_maxiter):
-    phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, vp_prev, vm_prev, tau_phi, dt, dx, fv, epsl)
+    phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, v_prev, tau_phi, dt, dspatial, fv, epsl)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
-    rho_next, vp_next, vm_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, vp_prev, vm_prev, tau_rho, dt, dx, epsl, 
-                                                fns_dict, x_arr, t_arr)
+    rho_next, v_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, v_prev, tau_rho, dt, dspatial, epsl, 
+                                      fns_dict, x_arr, t_arr, ndim)
 
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
     # err2: dual error
-    err2_rho = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
-    err2_vp = jnp.linalg.norm(vp_next - vp_prev) / jnp.maximum(jnp.linalg.norm(vp_prev), 1.0)
-    err2_vm = jnp.linalg.norm(vm_next - vm_prev) / jnp.maximum(jnp.linalg.norm(vm_prev), 1.0)
-    err2 = jnp.sqrt(err2_rho*err2_rho + err2_vp*err2_vp + err2_vm*err2_vm)
+    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0) ** 2
+    for v0, v1 in zip(v_prev, v_next):
+      err2 += jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0) ** 2
+    err2 = jnp.sqrt(err2)
     # err3: equation error
-    HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dx, H_plus_fn, H_minus_fn, epsl, x_arr, t_arr)
+    if ndim == 1:
+      HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+    elif ndim == 2:
+      HJ_residual = compute_HJ_residual_EO_2d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
     err3 = jnp.mean(jnp.abs(HJ_residual))
     
     error = jnp.array([err1, err2,err3])
@@ -204,46 +307,55 @@ def PDHG_solver_1d(fn_update_primal, fn_update_dual, phi0, rho0, v0,
       print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
-      results_all.append((i, [vp_next, vm_next], rho_prev, [], phi_prev))
+      results_all.append((i, v_next, rho_prev, [], phi_prev))
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
-      print('vm max {:.3E}, vm min {:.3E}, vp max {:.3E}, vp min {:.3E}'.format(jnp.max(vm_next), jnp.min(vm_next), jnp.max(vp_next), jnp.min(vp_next)), flush = True)
     rho_prev = rho_next
     phi_prev = phi_next
-    vp_prev = vp_next
-    vm_prev = vm_next
+    v_prev = v_next
   # print the final error
   print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
-  results_all.append((i+1, [vp_next, vm_next], rho_next, None, phi_next))
+  results_all.append((i+1, v_next, rho_next, None, phi_next))
   return results_all, jnp.array(error_all)
-        
 
-def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nx, ndim,
-                    g, dx, dt, c_on_rho, time_step_per_PDHG = 2,
+
+def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+                    g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                    epsl = 0.0, stepsz_param=0.9, dy = 0.0):
+                    epsl = 0.0, stepsz_param=0.9):
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
   
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
-  rho0 = jnp.zeros([time_step_per_PDHG-1, nx])
-  vp0 = jnp.zeros([time_step_per_PDHG-1, nx])
-  vm0 = jnp.zeros([time_step_per_PDHG-1, nx])
-  v0 = [vp0, vm0]
+  if ndim == 1:
+    nx = nspatial[0]
+    rho0 = jnp.zeros([time_step_per_PDHG-1, nx])
+    vp0 = jnp.zeros([time_step_per_PDHG-1, nx])
+    vm0 = jnp.zeros([time_step_per_PDHG-1, nx])
+    v0 = (vp0, vm0)
+  else:
+    nx, ny = nspatial[0], nspatial[1]
+    rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    vxp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    vxm0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    vyp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    vym0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    v0 = (vxp0, vxm0, vyp0, vym0)
   
   phi_all = []
-  if ndim==1:
-    pdhg_fn = PDHG_solver_1d
-  else:
-    raise NotImplementedError
   
   for i in range(nt_PDHG):
+    utils.timer.tic('pdhg_iter{}'.format(i))
     print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
-    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:,None]  # [time_step_per_PDHG-1, 1]
-    results_all, _ = pdhg_fn(fn_update_primal, fn_update_dual, phi0, rho0, v0, 
-                                    dx, dt, c_on_rho, fns_dict, x_arr, t_arr,
+    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)  # [time_step_per_PDHG-1]
+    if ndim == 1:
+      t_arr = t_arr[:,None]  # [time_step_per_PDHG-1, 1]
+    else:
+      t_arr = t_arr[:,None,None]  # [time_step_per_PDHG-1, 1, 1]
+    results_all, _ = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
+                                    dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                                    epsl = epsl, stepsz_param=stepsz_param, dy = dy)
+                                    epsl = epsl, stepsz_param=stepsz_param)
     _, v_curr, rho_curr, _, phi_curr = results_all[-1]
     if i < nt_PDHG-1:
       phi_all.append(phi_curr[:-1,:])
@@ -253,6 +365,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nx, n
     phi0 = phi0 + g_diff
     rho0 = rho_curr
     v0 = v_curr
+    utils.timer.toc('pdhg_iter{}'.format(i))
   phi_out = jnp.concatenate(phi_all, axis = 0)
   results_out = [(0, None, None, None, phi_out)]
   return results_out, None
@@ -279,31 +392,46 @@ def main(argv):
   T = 1
   x_period = 2
   c_on_rho = 10.0
-  ndim = 1
+  ndim = 2
 
   J, fns_dict = set_up_example_fns(egno, ndim, x_period, 2)
 
   dx = x_period / (nx)
   dt = T / (nt-1)
-  x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx,1]
+  if ndim == 1:
+    x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
+  else:
+    x_arr = jnp.linspace(0.0, x_period - dx, num = nx)  
+    y_arr = jnp.linspace(0.0, x_period - dx, num = nx)
+    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr)  # [nx, ny]
+    x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
   g = J(x_arr)  # [1, nx]
 
   if vmethod == 1: # v method
-    fn_update_primal = pdhg1d_v_2var.update_primal_1d
-    fn_update_dual = pdhg1d_v_2var.update_dual_1d
+    if ndim == 1:
+      fn_update_primal = pdhg1d_v_2var.update_primal_1d
+    else:
+      fn_update_primal = pdhg1d_v_2var.update_primal_2d
+    fn_update_dual = pdhg1d_v_2var.update_dual
     # stepsz_param = 0.1
   else: # m method
     fn_update_primal = pdhg1d_m_2var.update_primal_1d
     fn_update_dual = pdhg1d_m_2var.update_dual_1d
     # stepsz_param = 0.9
-  
-  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nx, ndim,
-                    g, dx, dt, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
-                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                    epsl = epsl, stepsz_param=stepsz_param, dy = 0.0)
-  print('phi: ', results[-1][-1], flush=True)
 
-  # save_analysis.save('test', 'results_vmethod_{}_orderswitched'.format(vmethod), (results, errs_none))
+  if ndim == 1:
+    dspatial = [dx]
+    nspatial = [nx]
+  else:
+    dspatial = [dx, dx]
+    nspatial = [nx, nx]
+  
+  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+                    g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
+                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
+                    epsl = epsl, stepsz_param=stepsz_param)
+  print('phi: ', results[-1][-1], flush=True)
+  save_analysis.save('test', 'results_vmethod_{}'.format(vmethod), (results, errs_none))
 
 if __name__ == '__main__':
   from absl import app, flags, logging
