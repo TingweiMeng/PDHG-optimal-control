@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 def main(argv):
   import pdhg1d_m_2var
   import pdhg1d_v_2var
-  import pdhg1d_m_2var_test
 
   for key, value in FLAGS.__flags.items():
     print(value.name, ": ", value._value, flush=True)
@@ -63,7 +62,7 @@ def main(argv):
   nspatial = [nx]
   dspatial = [dx]
   results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr,
-                    nt, nspatial, ndim, g, dspatial, dt, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
+                    nt, nspatial, ndim, g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param)
   if ifsave:
@@ -84,7 +83,7 @@ if __name__ == '__main__':
   flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
-  flags.DEFINE_integer('time_step_per_PDHG', 3, 'number of time discretization per PDHG iteration')
+  flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
   flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
   
   app.run(main)
