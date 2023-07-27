@@ -47,7 +47,7 @@ def main(argv):
   dt = T / (nt-1)
   x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
   
-  J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period)
+  J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver=FLAGS.theoretical_scheme)
 
   if egno < 10:
     fn_update_primal = pdhg1d_m_2var.update_primal_1d
@@ -85,5 +85,6 @@ if __name__ == '__main__':
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_integer('time_step_per_PDHG', 3, 'number of time discretization per PDHG iteration')
+  flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
   
   app.run(main)

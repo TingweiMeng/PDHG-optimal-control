@@ -24,7 +24,10 @@ def update_rho_1d(rho_prev, phi, v, sigma, dt, dspatial, epsl, c_on_rho, fns_dic
   vec = -Dx_right_decreasedim(phi, dx) * vp - Dx_left_decreasedim(phi, dx) * vm
   vec = vec - Dt_decreasedim(phi,dt) + epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
   vec = vec + Hstar_plus_fn(vm, x_arr, t_arr) + Hstar_minus_fn(vp, x_arr, t_arr)
-  rho_next = jnp.maximum(rho_prev - sigma * vec, -c_on_rho)  # [nt-1, nx]
+  rho_next = rho_prev - sigma * vec
+  # normalization
+  # rho_next /= (jnp.sum(rho_next + c_on_rho, axis = 1, keepdims = True) * dx)
+  rho_next = jnp.maximum(rho_next, -c_on_rho)  # [nt-1, nx]
   return rho_next
 
 def update_v_1d(v_prev, phi, rho, sigma, dspatial, c_on_rho, fns_dict, x_arr, t_arr, eps=1e-4):
@@ -54,10 +57,11 @@ def update_rho_2d(rho_prev, phi, v, sigma, dt, dspatial, epsl, c_on_rho, fns_dic
   Hystar_minus_fn = fns_dict.Hystar_minus_fn
   vec = -Dx_right_decreasedim(phi, dx) * vxp - Dx_left_decreasedim(phi, dx) * vxm
   vec = vec - Dy_right_decreasedim(phi, dy) * vyp - Dy_left_decreasedim(phi, dy) * vym
-  vec = vec - Dt_decreasedim(phi,dt) + epsl * Dxx_decreasedim(phi, dx) + epsl * Dyy_decreasedim(phi, dy)  # [nt-1, nx]
+  vec = vec - Dt_decreasedim(phi,dt) + epsl * Dxx_decreasedim(phi, dx) + epsl * Dyy_decreasedim(phi, dy)  # [nt-1, nx, ny]
   vec = vec + Hxstar_plus_fn(vxm, x_arr, t_arr) + Hxstar_minus_fn(vxp, x_arr, t_arr)
   vec = vec + Hystar_plus_fn(vym, x_arr, t_arr) + Hystar_minus_fn(vyp, x_arr, t_arr)
-  rho_next = jnp.maximum(rho_prev - sigma * vec, -c_on_rho)  # [nt-1, nx]
+  rho_next = rho_prev - sigma * vec
+  rho_next = jnp.maximum(rho_next, -c_on_rho)  # [nt-1, nx, ny]
   return rho_next
 
 def update_v_2d(v_prev, phi, rho, sigma, dspatial, c_on_rho, fns_dict, x_arr, t_arr, eps=1e-4):

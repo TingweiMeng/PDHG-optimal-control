@@ -297,7 +297,7 @@ def get_cfl_condition(nx_dense, T, x_period, epsl=0, ndim=1):
 
 
 def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, y_period, epsl = 0.0):
-    J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period)
+    J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver=False)
     # J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, ndim, x_period, y_period)
     dx_dense = x_period / nx_dense
     dy_dense = y_period / ny_dense
@@ -351,7 +351,7 @@ def main(argv):
     nt_dense_min = get_cfl_condition(nx_dense, T, x_period, epsl=epsl, ndim=ndim)
     nt_dense = ((nt_dense_min-1) // (nt - 1) + 1) * (nt - 1) + 1
 
-    J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period)
+    J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver=FLAGS.theoretical_scheme)
 
     figname = "./eg{}_{}d/".format(egno, ndim)
     if not os.path.exists(figname):
@@ -396,6 +396,7 @@ if __name__ == "__main__":
     # flags.DEFINE_string('time_stamp', '', 'time stamp in the filename')
     flags.DEFINE_string('filename', '', 'the name of the pickle file to read')
     flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
+    flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
     
     app.run(main)
 

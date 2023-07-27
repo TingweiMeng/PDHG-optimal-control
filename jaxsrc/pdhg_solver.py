@@ -254,7 +254,11 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   rho_prev = rho0
   v_prev = v0
 
-  scale = 1.5
+  c_max = 50 * c_on_rho
+  delta_c = 50
+
+  scale = 1.0
+  # scale = 1.5
   tau_phi = stepsz_param / scale
   tau_rho = stepsz_param * scale
   
@@ -306,10 +310,13 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
       print("Nan error at iter {}".format(i))
       break
+    # if jnp.min(rho_next) < -c_on_rho + eps and c_on_rho < c_max:
+    #   print('increase c value from {} to {}'.format(c_on_rho, c_on_rho + delta_c), flush = True)
+    #   c_on_rho += delta_c
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, v_next, rho_prev, [], phi_prev))
-      print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}'.format(i, 
-                  error[0],  error[1],  error[2], jnp.min(rho_next)), flush = True)
+      print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
+                  error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
     rho_prev = rho_next
     phi_prev = phi_next
     v_prev = v_next
@@ -343,11 +350,20 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
     v0 = (vxp0, vxm0, vyp0, vym0)
   
   phi_all = []
+  # vp_all = []
+  # vm_all = []
+  # rho_all = []
   
   for i in range(nt_PDHG):
+    # # note: check true solution IC, TODO: remove this !!!!!!!!!!!!!!!!!!!!!!!!!!
+    # t_arr = jnp.array([i*dt, (i+1)*dt])[:,None]
+    # phi0 = (x_arr[...,0]-1)**2/2 / (1 + t_arr)
+    # vp0 = jnp.maximum(x_arr[...,0]-1, 0) / (1 + t_arr[1:,:])
+    # vm0 = jnp.minimum(x_arr[...,0]-1, 0) / (1 + t_arr[1:,:])
+    # v0 = (vp0, vm0)
     utils.timer.tic('pdhg_iter{}'.format(i))
     print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
-    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)  # [time_step_per_PDHG-1]
+    t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:]  # [time_step_per_PDHG-1]
     if ndim == 1:
       t_arr = t_arr[:,None]  # [time_step_per_PDHG-1, 1]
     else:
@@ -357,44 +373,54 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                                     epsl = epsl, stepsz_param=stepsz_param)
     _, v_curr, rho_curr, _, phi_curr = results_all[-1]
+    # print('phi_curr: ', phi_curr, flush=True)
     if i < nt_PDHG-1:
       phi_all.append(phi_curr[:-1,:])
     else:
       phi_all.append(phi_curr)
+    # vp_all.append(v_curr[0])
+    # vm_all.append(v_curr[1])
+    # rho_all.append(rho_curr)
     g_diff = phi_curr[-1:,...] - phi0[0:1,...]
     phi0 = phi0 + g_diff
     rho0 = rho_curr
     v0 = v_curr
     utils.timer.toc('pdhg_iter{}'.format(i))
   phi_out = jnp.concatenate(phi_all, axis = 0)
+  # vp_out = jnp.concatenate(vp_all, axis = 0)
+  # vm_out = jnp.concatenate(vm_all, axis = 0)
+  # rho_out = jnp.concatenate(rho_all, axis = 0)
+  # results_out = [(0, (vp_out, vm_out), rho_out, None, phi_out)]
   results_out = [(0, None, None, None, phi_out)]
   return results_out, None
 
 def main(argv):
   import pdhg1d_m_2var
   import pdhg1d_v_2var
+  import pdhg1d_v_samealg
+  import pdhg1d_v_diffalg
   from solver import set_up_example_fns
   import save_analysis
 
   epsl = FLAGS.epsl
   vmethod = FLAGS.vmethod
   stepsz_param = FLAGS.stepsz_param
+  ndim = FLAGS.ndim
+  nt = FLAGS.nt
+  nx = FLAGS.nx
+  egno = FLAGS.egno
+  N_maxiter = FLAGS.N_maxiter
+  theoretical_ver = FLAGS.theoretical_scheme
 
-  nt = 6
-  nx = 10
   time_step_per_PDHG = 2
-
-  N_maxiter = 2001
   print_freq = 100
 
-  egno = 0
   eps = 1e-6
   T = 1
   x_period = 2
   c_on_rho = 10.0
-  ndim = 2
 
-  J, fns_dict = set_up_example_fns(egno, ndim, x_period, 2)
+  J, fns_dict = set_up_example_fns(egno, ndim, x_period, 2, theoretical_ver=theoretical_ver)
 
   dx = x_period / (nx)
   dt = T / (nt-1)
@@ -414,10 +440,16 @@ def main(argv):
       fn_update_primal = pdhg1d_v_2var.update_primal_2d
     fn_update_dual = pdhg1d_v_2var.update_dual
     # stepsz_param = 0.1
-  else: # m method
+  elif vmethod == 0: # m method
     fn_update_primal = pdhg1d_m_2var.update_primal_1d
     fn_update_dual = pdhg1d_m_2var.update_dual_1d
     # stepsz_param = 0.9
+  elif vmethod == 2: # v method test on linear
+    fn_update_primal = pdhg1d_v_samealg.update_primal_1d
+    fn_update_dual = pdhg1d_v_samealg.update_dual
+  else:
+    fn_update_primal = pdhg1d_v_diffalg.update_primal_1d
+    fn_update_dual = pdhg1d_v_diffalg.update_dual
 
   if ndim == 1:
     dspatial = [dx]
@@ -430,8 +462,22 @@ def main(argv):
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param)
-  print('phi: ', results[-1][-1], flush=True)
-  save_analysis.save('test', 'results_vmethod_{}'.format(vmethod), (results, errs_none))
+  t_arr = jnp.linspace(0, T, num = nt)[:,None]
+  # print('phi: ', results[-1][-1], flush=True)
+  
+  if egno == 10:
+    phi_true = (x_arr[...,0]-1)**2/2/(1+ t_arr) + epsl /2 * jnp.log(1 + t_arr)
+    err = jnp.linalg.norm(results[-1][-1] - phi_true) / jnp.maximum(jnp.linalg.norm(phi_true), 1)
+    print('phi error: ', err, flush=True)
+  elif egno == 21 and dx == dt:
+    phi_true = [g]
+    for i in range(nt-1):
+      phi_true.append(jnp.roll(phi_true[-1], 1, axis=1))
+    phi_true = jnp.concatenate(phi_true, axis = 0)
+    err = jnp.linalg.norm(results[-1][-1] - phi_true) / jnp.maximum(jnp.linalg.norm(phi_true), 1)
+    print('phi error: ', err, flush=True)
+
+  # save_analysis.save('test', 'results_vmethod_{}'.format(vmethod), (results, errs_none))
 
 if __name__ == '__main__':
   from absl import app, flags, logging
@@ -439,5 +485,11 @@ if __name__ == '__main__':
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('stepsz_param', 0.9, 'stepsize in pdhg')
   flags.DEFINE_integer('vmethod', 0, '1 if using vmethod, 0 if using mmethod')
+  flags.DEFINE_integer('ndim', 1, 'spatial dimension: 1 or 2')
+  flags.DEFINE_integer('nt', 6, 'time discretization number')
+  flags.DEFINE_integer('nx', 10, 'spatial discretization number')
+  flags.DEFINE_integer('egno', 21, 'egno')
+  flags.DEFINE_integer('N_maxiter', 2001, 'maximum number of iterations')
+  flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
 
   app.run(main)
