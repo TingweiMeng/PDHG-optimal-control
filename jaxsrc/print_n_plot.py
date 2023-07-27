@@ -48,7 +48,7 @@ def compute_EO_forward_solution_1d(nt, dx, dt, f_in_H, c_in_H, g, epsl = 0.0):
         dphidx_right = (jnp.roll(phi[i], -1) - phi[i])/dx
         H_1norm = jnp.maximum(-dphidx_right, 0) + jnp.maximum(dphidx_left, 0)
         H_val = c_in_H * H_1norm + f_in_H
-        diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2) / 2
+        diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2)
         phi.append(phi[i] - dt * H_val + dt * diffusion)
     phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
@@ -72,7 +72,7 @@ def compute_EO_forward_solution_1d_general(nt, dx, dt, H_plus, H_minus, g, x_arr
         dphidx_left = (phi[i] - jnp.roll(phi[i], 1))/dx
         dphidx_right = (jnp.roll(phi[i], -1) - phi[i])/dx
         H_val = H_plus(dphidx_left, x_arr, i*dt) + H_minus(dphidx_right, x_arr, i*dt)
-        diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2) / 2
+        diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2)
         phi.append(phi[i] - dt * H_val + dt * diffusion)
     phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
@@ -247,7 +247,7 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
 
 def get_cfl_condition_1d(nx_dense, T, x_period, epsl=0):
     dx_dense = x_period / nx_dense
-    dt_dense = 0.9/(epsl/2 / (dx_dense**2) + 2/dx_dense)
+    dt_dense = 0.9/(epsl / (dx_dense**2) + 2/dx_dense)
     nt_dense = int(T / dt_dense) + 2
     return nt_dense
 
