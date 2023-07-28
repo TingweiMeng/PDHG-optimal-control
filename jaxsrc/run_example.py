@@ -41,7 +41,7 @@ def main(argv):
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
   logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
-  save_dir, filename_prefix = get_save_dir(time_stamp, egno, 1, nt, nx, 0)
+  save_dir, filename_prefix = get_save_dir(time_stamp, egno, ndim, nt, nx, ny)
 
   dx = x_period / (nx)
   dy = y_period / (ny)
