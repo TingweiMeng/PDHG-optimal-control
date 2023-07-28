@@ -73,11 +73,15 @@ def compute_EO_forward_solution_1d_general(nt, dt, dspatial, fns_dict, g, x_arr,
     phi = []
     phi.append(g)
     for i in range(nt-1):
+        print('index for t: {}'.format(i))
         dphidx_left = (phi[i] - jnp.roll(phi[i], 1))/dx
         dphidx_right = (jnp.roll(phi[i], -1) - phi[i])/dx
         H_val = H_plus_fn(dphidx_left, x_arr, i*dt) + H_minus_fn(dphidx_right, x_arr, i*dt)
         diffusion = epsl * (jnp.roll(phi[i], -1) - 2 * phi[i] + jnp.roll(phi[i], 1)) / (dx**2)
-        phi.append(phi[i] - dt * H_val + dt * diffusion)
+        phi_new = phi[i] - dt * H_val + dt * diffusion
+        phi.append(phi_new)
+        if jnp.any(jnp.isnan(phi_new)):
+          break
     phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
     print("phi {}".format(phi_arr))
@@ -129,6 +133,7 @@ def compute_EO_forward_solution_2d_general(nt, dt, dspatial, fns_dict, g, x_arr,
     phi = []
     phi.append(g)
     for i in range(nt-1):
+        print('index for t: {}'.format(i))
         dphidx_left = (phi[i] - jnp.roll(phi[i], 1, axis = 0))/dx
         dphidx_right = (jnp.roll(phi[i], -1, axis = 0) - phi[i])/dx
         dphidy_left = (phi[i] - jnp.roll(phi[i], 1, axis = 1))/dy
@@ -137,7 +142,10 @@ def compute_EO_forward_solution_2d_general(nt, dt, dspatial, fns_dict, g, x_arr,
         H_val += Hy_plus_fn(dphidy_left, x_arr, i*dt) + Hy_minus_fn(dphidy_right, x_arr, i*dt)
         diffusion = epsl * (jnp.roll(phi[i], -1, axis = 0) - 2 * phi[i] + jnp.roll(phi[i], 1, axis = 0)) / (dx**2) \
                     + epsl * (jnp.roll(phi[i], -1, axis = 1) - 2 * phi[i] + jnp.roll(phi[i], 1, axis = 1)) / (dy**2)
-        phi.append(phi[i] - dt * H_val + dt * diffusion)
+        phi_new = phi[i] - dt * H_val + dt * diffusion
+        phi.append(phi_new)
+        if jnp.any(jnp.isnan(phi_new)):
+          break
     phi_arr = jnp.stack(phi, axis = 0)
     print("phi dimension {}".format(jnp.shape(phi_arr)))
     print("phi {}".format(phi_arr))
@@ -316,8 +324,14 @@ def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, 
         else:
             g = J(x_arr_1d)  # [nx_dense]
             print('shape g {}'.format(jnp.shape(g)))
-            phi_dense = compute_EO_forward_solution_1d_general(nt_dense, dt_dense, [dx_dense],
+            trial_num = 10
+            for j in range(trial_num):
+                print('try nt_dense {}, nx_dense {}, trial {}'.format(nt_dense, nx_dense, j))
+                phi_dense = compute_EO_forward_solution_1d_general(nt_dense, dt_dense, [dx_dense],
                                                                fns_dict, g, x_arr_1d, epsl = epsl)
+                if not jnp.any(jnp.isnan(phi_dense)):
+                    break
+                nt_dense *= 2
             print('shape phi_dense {}'.format(jnp.shape(phi_dense)))
         # plt.figure()
         # plt.contourf(phi_dense)
@@ -325,13 +339,19 @@ def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, 
         # plt.savefig('./phi_dense.png')
         # plt.close()
     elif ndim == 2:
+        trial_num = 5
         x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
         y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
         x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense, indexing='ij')
         x_arr_2d = jnp.array(np.concatenate([x_mesh_dense[:-1,:-1, None], y_mesh_dense[:-1, :-1, None]], axis = -1))  # [nx_dense, ny_dense, 2]
         g = J(x_arr_2d)  # [nx_dense, ny_dense]
-        phi_dense = compute_EO_forward_solution_2d_general(nt_dense, dt_dense, [dx_dense, dy_dense], 
+        for j in range(trial_num):
+            print('try nt_dense {}, nx_dense {}, ny_dense {}, trial {}'.format(nt_dense, nx_dense, ny_dense, j))
+            phi_dense = compute_EO_forward_solution_2d_general(nt_dense, dt_dense, [dx_dense, dy_dense], 
                                                            fns_dict, g, x_arr_2d, epsl=epsl)
+            if not jnp.any(jnp.isnan(phi_dense)):
+                break
+            nt_dense *= 2
     else:
         raise ValueError("ndim should be 1 or 2")
     return phi_dense
