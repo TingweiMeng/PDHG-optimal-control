@@ -331,7 +331,7 @@ def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, 
                                                                fns_dict, g, x_arr_1d, epsl = epsl)
                 if not jnp.any(jnp.isnan(phi_dense)):
                     break
-                nt_dense *= 2
+                nt_dense = 2 * (nt_dense - 1) + 1
             print('shape phi_dense {}'.format(jnp.shape(phi_dense)))
         # plt.figure()
         # plt.contourf(phi_dense)
@@ -351,7 +351,7 @@ def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, 
                                                            fns_dict, g, x_arr_2d, epsl=epsl)
             if not jnp.any(jnp.isnan(phi_dense)):
                 break
-            nt_dense *= 2
+            nt_dense = 2 * (nt_dense - 1) + 1
     else:
         raise ValueError("ndim should be 1 or 2")
     return phi_dense
