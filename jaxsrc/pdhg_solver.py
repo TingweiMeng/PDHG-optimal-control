@@ -273,7 +273,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     dx, dy = dspatial[0], dspatial[1]
     Lap_mat = jnp.array([[-2/(dx*dx)-2/(dy*dy), 1/(dy*dy)] + [0.0] * (ny-3) + [1/(dy*dy)],
                         [1/(dx*dx)] + [0.0] * (ny -1)] + [[0.0]* ny] * (nx-3) + \
-                        [[1/(dx*dx)] + [0.0] * (ny-1)])
+                        [[1/(dx*dx)] + [0.0] * (ny-1)])  # [nx, ny]
     fv = jnp.fft.fft2(Lap_mat)  # [nx, ny]
   else:
     raise NotImplementedError
@@ -332,7 +332,6 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
                     epsl = 0.0, stepsz_param=0.9):
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
-  
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
   if ndim == 1:
     nx = nspatial[0]
@@ -348,6 +347,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
     vyp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
     vym0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
     v0 = (vxp0, vxm0, vyp0, vym0)
+    print('shape of phi0: ', jnp.shape(phi0), flush = True)
   
   phi_all = []
   v_all = []
@@ -459,8 +459,9 @@ def main(argv):
                     epsl = epsl, stepsz_param=stepsz_param)
   t_arr = jnp.linspace(0, T, num = nt)[:,None]
   # print('phi: ', results[-1][-1], flush=True)
+  phi = results[-1][-1]
   plt.figure()
-  plt.contourf(results[-1][-1])
+  plt.contourf(phi)
   plt.colorbar()
   plt.savefig('phi.png')
   plt.close()
@@ -469,6 +470,8 @@ def main(argv):
   plt.colorbar()
   plt.savefig('rho.png')
   plt.close()
+  HJ_residual = compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+  print('HJ residual {:.2E}'.format(jnp.mean(jnp.abs(HJ_residual))), flush=True)
 
   
   if egno == 10:

@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import pdhg1d_m_2var
 import pdhg1d_v_2var
 import pdhg1d_m_2var_test
+import pdhg2d_m
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -32,6 +33,9 @@ def main(argv):
   epsl = FLAGS.epsl
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   theoretical_ver = FLAGS.theoretical_scheme
+
+  print('nx: ', nx)
+  print('ny: ', ny)
 
   N_maxiter = 10000000
   print_freq = 10000
@@ -55,16 +59,22 @@ def main(argv):
   else:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)  
     y_arr = jnp.linspace(0.0, x_period - dy, num = ny)
-    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr)  # [nx, ny]
+    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')  # [nx, ny]
+    # print('x_arr: ', x_arr.shape)
+    # print('x_mesh: ', x_mesh.shape)
+    # print('y_mesh: ', y_mesh.shape)
     x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
+  print('shape of g: ', g.shape)
 
   if egno < 10:
-    if ndim > 1:
-      raise NotImplementedError
     if theoretical_ver:
-      fn_update_primal = pdhg1d_m_2var_test.update_primal_1d
-      fn_update_dual = pdhg1d_m_2var_test.update_dual_1d
+      if ndim == 1:
+        fn_update_primal = pdhg1d_m_2var_test.update_primal_1d
+        fn_update_dual = pdhg1d_m_2var_test.update_dual_1d
+      else:
+        fn_update_primal = pdhg2d_m.update_primal
+        fn_update_dual = pdhg2d_m.update_dual
     else:
       fn_update_primal = pdhg1d_m_2var.update_primal_1d
       fn_update_dual = pdhg1d_m_2var.update_dual_1d
@@ -81,6 +91,8 @@ def main(argv):
   else:
     dspatial = [dx, dy]
     nspatial = [nx, ny]
+    print('dspatial: ', dspatial)
+    print('nspatial: ', nspatial)
   
   results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
