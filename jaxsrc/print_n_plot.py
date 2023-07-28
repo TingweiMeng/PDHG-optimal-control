@@ -380,6 +380,8 @@ def main(argv):
     J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver=FLAGS.theoretical_scheme)
 
     figname = "./eg{}_{}d/".format(egno, ndim)
+    if FLAGS.plot_folder != '':
+        figname += FLAGS.plot_folder + '/'
     if not os.path.exists(figname):
         os.makedirs(figname)
 
@@ -426,6 +428,8 @@ if __name__ == "__main__":
     flags.DEFINE_string('filename', '', 'the name of the pickle file to read')
     flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
     flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
+
+    flags.DEFINE_string('plot_folder', '', 'the folder name of plot')
     
     app.run(main)
 
