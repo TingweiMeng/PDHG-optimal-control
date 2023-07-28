@@ -260,7 +260,7 @@ def plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname, eps
       raise ValueError("epsl must be 0 or 0.1")
     x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)
     y_arr = np.linspace(0.0, y_period, num = ny + 1, endpoint = True)
-    x_mesh, y_mesh = np.meshgrid(x_arr, y_arr)
+    x_mesh, y_mesh = np.meshgrid(x_arr, y_arr, indexing='ij')
     # plot solution
     phi_terminal = jnp.concatenate([phi[-1,...], phi[-1, 0:1, :]], axis = 0)  # [nx+1, ny]
     phi_terminal_np = jnp.concatenate([phi_terminal, phi_terminal[:,0:1]], axis = 1)  # [nx+1, ny+1]
@@ -319,10 +319,15 @@ def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, 
             phi_dense = compute_EO_forward_solution_1d_general(nt_dense, dt_dense, [dx_dense],
                                                                fns_dict, g, x_arr_1d, epsl = epsl)
             print('shape phi_dense {}'.format(jnp.shape(phi_dense)))
+        # plt.figure()
+        # plt.contourf(phi_dense)
+        # plt.colorbar()
+        # plt.savefig('./phi_dense.png')
+        # plt.close()
     elif ndim == 2:
         x_arr_dense = np.linspace(0.0, x_period, num = nx_dense + 1, endpoint = True)
         y_arr_dense = np.linspace(0.0, y_period, num = ny_dense + 1, endpoint = True)
-        x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense)
+        x_mesh_dense, y_mesh_dense = np.meshgrid(x_arr_dense, y_arr_dense, indexing='ij')
         x_arr_2d = jnp.array(np.concatenate([x_mesh_dense[:-1,:-1, None], y_mesh_dense[:-1, :-1, None]], axis = -1))  # [nx_dense, ny_dense, 2]
         g = J(x_arr_2d)  # [nx_dense, ny_dense]
         phi_dense = compute_EO_forward_solution_2d_general(nt_dense, dt_dense, [dx_dense, dy_dense], 
@@ -350,6 +355,7 @@ def main(argv):
     nx_dense, ny_dense = 800, 800
     nt_dense_min = get_cfl_condition(nx_dense, T, x_period, epsl=epsl, ndim=ndim)
     nt_dense = ((nt_dense_min-1) // (nt - 1) + 1) * (nt - 1) + 1
+    # nt_dense = 1201
 
     J, fns_dict = set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver=FLAGS.theoretical_scheme)
 
@@ -374,7 +380,7 @@ def main(argv):
     elif ndim == 2:
         x_arr = jnp.linspace(0.0, x_period-dx, num = nx)
         y_arr = jnp.linspace(0.0, y_period-dy, num = ny)
-        x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr)
+        x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')
         x_arr_2d = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
         t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None,None]  # [nt-1, 1,1]
         err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)

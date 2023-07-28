@@ -420,7 +420,7 @@ def main(argv):
   else:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)  
     y_arr = jnp.linspace(0.0, x_period - dx, num = nx)
-    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr)  # [nx, ny]
+    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')  # [nx, ny]
     x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
   g = J(x_arr)  # [1, nx]
 
