@@ -390,22 +390,25 @@ def main(argv):
     phi = read_solution(filename)
     phi_dense = compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, y_period, epsl=epsl)
 
+    err_l1_rel = -1
     # compute error
     if ndim == 1:
         x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
         t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None]  # [nt-1, 1]
-        err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
         HJ_residual = compute_HJ_residual_EO_1d_general(phi, dt, [dx], fns_dict, epsl, x_arr, t_arr)
-        plot_solution_1d(phi, error, nt, nx, T, x_period, figname, epsl=epsl)
+        if not jnp.any(jnp.isnan(phi_dense)):
+            err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
+            plot_solution_1d(phi, error, nt, nx, T, x_period, figname, epsl=epsl)
     elif ndim == 2:
         x_arr = jnp.linspace(0.0, x_period-dx, num = nx)
         y_arr = jnp.linspace(0.0, y_period-dy, num = ny)
         x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')
         x_arr_2d = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
         t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None,None]  # [nt-1, 1,1]
-        err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
         HJ_residual = compute_HJ_residual_EO_2d_general(phi, dt, [dx,dy], fns_dict, epsl, x_arr_2d, t_arr)
-        plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname)
+        if not jnp.any(jnp.isnan(phi_dense)):
+            err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
+            plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname)
 
     print('row 1: HJ residual {:.2E}'.format(jnp.mean(jnp.abs(HJ_residual))))
     print("row 2: err_l1_rel {:.2E}".format(err_l1_rel))
