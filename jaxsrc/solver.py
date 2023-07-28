@@ -273,11 +273,11 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
   elif egno < 10:
     J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
   elif egno == 10:
-    J = lambda x: (x[...,0] - 1)**2/2
+    J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
   elif egno == 11:
     J = lambda x: 0 * x[...,0]
   elif egno == 12:
-    J = lambda x: -jnp.sum(x**2, axis=-1)/10
+    J = lambda x: -jnp.sum((x-1)**2, axis=-1)/10
   elif egno == 21:
     # J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
     J = lambda x: (x[...,0] - 1)**2/2
@@ -303,9 +303,13 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
   elif egno == 10:  # quad case
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 11 or egno == 12:
-    f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
+  elif (egno == 11 or egno == 12):
+    if ndim == 1:
+      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
                                           (x[...,0] -x_period - t - 0.5)**2/2)
+    elif ndim == 2:
+      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
+                                          (x[...,0] -x_period - t - 0.5)**2/2) - (x[...,1] - 1)**2/4
     # f_in_H_fn = lambda x, t: -(x[...,0] - t - 0.5)**2/2
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   elif egno == 21:  # linear H(p) = p
