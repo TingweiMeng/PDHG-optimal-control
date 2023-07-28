@@ -257,8 +257,8 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   c_max = 50 * c_on_rho
   delta_c = 50
 
-  scale = 1.0
-  # scale = 1.5
+  # scale = 1.0
+  scale = 1.5
   tau_phi = stepsz_param / scale
   tau_rho = stepsz_param * scale
   
@@ -304,7 +304,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     
     error = jnp.array([err1, err2,err3])
     error_all.append(error)
-    if error[2] < eps:
+    if (error[0] < eps and error[1] < eps) or (error[2] < eps):
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
@@ -350,17 +350,10 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
     v0 = (vxp0, vxm0, vyp0, vym0)
   
   phi_all = []
-  # vp_all = []
-  # vm_all = []
-  # rho_all = []
+  v_all = []
+  rho_all = []
   
   for i in range(nt_PDHG):
-    # # note: check true solution IC, TODO: remove this !!!!!!!!!!!!!!!!!!!!!!!!!!
-    # t_arr = jnp.array([i*dt, (i+1)*dt])[:,None]
-    # phi0 = (x_arr[...,0]-1)**2/2 / (1 + t_arr)
-    # vp0 = jnp.maximum(x_arr[...,0]-1, 0) / (1 + t_arr[1:,:])
-    # vm0 = jnp.minimum(x_arr[...,0]-1, 0) / (1 + t_arr[1:,:])
-    # v0 = (vp0, vm0)
     utils.timer.tic('pdhg_iter{}'.format(i))
     print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
     t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:]  # [time_step_per_PDHG-1]
@@ -373,33 +366,31 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                                     epsl = epsl, stepsz_param=stepsz_param)
     _, v_curr, rho_curr, _, phi_curr = results_all[-1]
-    # print('phi_curr: ', phi_curr, flush=True)
     if i < nt_PDHG-1:
       phi_all.append(phi_curr[:-1,:])
     else:
       phi_all.append(phi_curr)
-    # vp_all.append(v_curr[0])
-    # vm_all.append(v_curr[1])
-    # rho_all.append(rho_curr)
+    v_all.append(jnp.stack(v_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, 2**ndim] or [time_step_per_PDHG-1, nx, ny, 1]
+    rho_all.append(rho_curr)
     g_diff = phi_curr[-1:,...] - phi0[0:1,...]
     phi0 = phi0 + g_diff
     rho0 = rho_curr
     v0 = v_curr
     utils.timer.toc('pdhg_iter{}'.format(i))
   phi_out = jnp.concatenate(phi_all, axis = 0)
-  # vp_out = jnp.concatenate(vp_all, axis = 0)
-  # vm_out = jnp.concatenate(vm_all, axis = 0)
-  # rho_out = jnp.concatenate(rho_all, axis = 0)
-  # results_out = [(0, (vp_out, vm_out), rho_out, None, phi_out)]
-  results_out = [(0, None, None, None, phi_out)]
+  v_out = jnp.concatenate(v_all, axis = 0)
+  rho_out = jnp.concatenate(rho_all, axis = 0)
+  results_out = [(0, v_out, rho_out, None, phi_out)]
   return results_out, None
 
 def main(argv):
   import pdhg1d_m_2var
+  import pdhg1d_m_2var_test
   import pdhg1d_v_2var
   import pdhg1d_v_samealg
   import pdhg1d_v_diffalg
   from solver import set_up_example_fns
+  from print_n_plot import compute_ground_truth, get_sol_on_coarse_grid_1d
   import save_analysis
 
   epsl = FLAGS.epsl
@@ -441,8 +432,12 @@ def main(argv):
     fn_update_dual = pdhg1d_v_2var.update_dual
     # stepsz_param = 0.1
   elif vmethod == 0: # m method
-    fn_update_primal = pdhg1d_m_2var.update_primal_1d
-    fn_update_dual = pdhg1d_m_2var.update_dual_1d
+    if theoretical_ver:
+      fn_update_primal = pdhg1d_m_2var_test.update_primal_1d
+      fn_update_dual = pdhg1d_m_2var_test.update_dual_1d
+    else:
+      fn_update_primal = pdhg1d_m_2var.update_primal_1d
+      fn_update_dual = pdhg1d_m_2var.update_dual_1d
     # stepsz_param = 0.9
   elif vmethod == 2: # v method test on linear
     fn_update_primal = pdhg1d_v_samealg.update_primal_1d
@@ -464,20 +459,35 @@ def main(argv):
                     epsl = epsl, stepsz_param=stepsz_param)
   t_arr = jnp.linspace(0, T, num = nt)[:,None]
   # print('phi: ', results[-1][-1], flush=True)
+  plt.figure()
+  plt.contourf(results[-1][-1])
+  plt.colorbar()
+  plt.savefig('phi.png')
+  plt.close()
+  plt.figure()
+  plt.contourf(results[-1][-3])
+  plt.colorbar()
+  plt.savefig('rho.png')
+  plt.close()
+
   
   if egno == 10:
     phi_true = (x_arr[...,0]-1)**2/2/(1+ t_arr) + epsl /2 * jnp.log(1 + t_arr)
-    err = jnp.linalg.norm(results[-1][-1] - phi_true) / jnp.maximum(jnp.linalg.norm(phi_true), 1)
-    print('phi error: ', err, flush=True)
   elif egno == 21 and dx == dt:
     phi_true = [g]
     for i in range(nt-1):
       phi_true.append(jnp.roll(phi_true[-1], 1, axis=1))
-    phi_true = jnp.concatenate(phi_true, axis = 0)
-    err = jnp.linalg.norm(results[-1][-1] - phi_true) / jnp.maximum(jnp.linalg.norm(phi_true), 1)
-    print('phi error: ', err, flush=True)
+    phi_true = jnp.concatenate(phi_true, axis = 0)  
+  else:
+    nx_dense, ny_dense = 600, 600
+    nt_dense = 601
+    y_period = x_period
+    phi_true_finer = compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, y_period, epsl = epsl)
+    phi_true = get_sol_on_coarse_grid_1d(phi_true_finer, nt, nx)
+  err = jnp.linalg.norm(results[-1][-1] - phi_true) / jnp.maximum(jnp.linalg.norm(phi_true), 1)
+  print('phi error: ', err, flush=True)
 
-  # save_analysis.save('test', 'results_vmethod_{}'.format(vmethod), (results, errs_none))
+  save_analysis.save('test', 'results_vmethod_{}'.format(vmethod), (results, errs_none))
 
 if __name__ == '__main__':
   from absl import app, flags, logging
