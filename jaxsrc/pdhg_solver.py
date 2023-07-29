@@ -310,9 +310,9 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
       print("Nan error at iter {}".format(i))
       break
-    # if jnp.min(rho_next) < -c_on_rho + eps and c_on_rho < c_max:
-    #   print('increase c value from {} to {}'.format(c_on_rho, c_on_rho + delta_c), flush = True)
-    #   c_on_rho += delta_c
+    if jnp.min(rho_next) < -c_on_rho + eps and c_on_rho < c_max:
+      print('increase c value from {} to {}'.format(c_on_rho, c_on_rho + delta_c), flush = True)
+      c_on_rho += delta_c
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, v_next, rho_prev, [], phi_prev))
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
@@ -353,6 +353,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
   v_all = []
   rho_all = []
   
+  utils.timer.tic('all_time')
   for i in range(nt_PDHG):
     utils.timer.tic('pdhg_iter{}'.format(i))
     print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
@@ -377,6 +378,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
     rho0 = rho_curr
     v0 = v_curr
     utils.timer.toc('pdhg_iter{}'.format(i))
+    utils.timer.toc('all_time')
   phi_out = jnp.concatenate(phi_all, axis = 0)
   v_out = jnp.concatenate(v_all, axis = 0)
   rho_out = jnp.concatenate(rho_all, axis = 0)
