@@ -33,6 +33,7 @@ def main(argv):
   epsl = FLAGS.epsl
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   theoretical_ver = FLAGS.theoretical_scheme
+  ifL1usem = FLAGS.ifL1usem
 
   print('nx: ', nx)
   print('ny: ', ny)
@@ -67,7 +68,7 @@ def main(argv):
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
-  if egno < 10:
+  if egno < 10 and ifL1usem == True:
     if theoretical_ver:
       if ndim == 1:
         fn_update_primal = pdhg1d_m_2var_test.update_primal_1d
@@ -119,5 +120,6 @@ if __name__ == '__main__':
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
   flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
+  flags.DEFINE_boolean('ifL1usem', True, 'true if use m method in L1 case')
   
   app.run(main)
