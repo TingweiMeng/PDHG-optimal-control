@@ -8,6 +8,15 @@ from collections import namedtuple
 jax.config.update("jax_enable_x64", True)
 
 
+# @jax.jit
+def cubic_solver(p,q):  # solve x^3 + px + q = 0
+  sqrt_delta = jnp.sqrt(p**2/4 + q**3/27)
+  num1 = -q/2 + sqrt_delta
+  num2 = -q/2 - sqrt_delta
+  sol = jnp.sign(num1) * jnp.abs(num1) **(1/3) + jnp.sign(num2) * jnp.abs(num2) **(1/3)
+  return sol
+
+
 def tridiagonal_solve(dl, d, du, b): 
   """Pure JAX implementation of `tridiagonal_solve`.""" 
   prepend_zero = lambda x: jnp.append(jnp.zeros([1], dtype=x.dtype), x[:-1]) 
@@ -276,7 +285,7 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
     J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
   elif egno == 11:
     J = lambda x: 0 * x[...,0]
-  elif egno == 12:
+  elif egno == 12 or egno == 30:
     J = lambda x: -jnp.sum((x-1)**2, axis=-1)/10
   elif egno == 21:
     # J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
@@ -315,6 +324,9 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
   elif egno == 21:  # linear H(p) = p
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 30:  # H(p) = p^4/4
+    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
 
@@ -341,6 +353,13 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
     Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
     Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p
     Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p + 1.0
+  elif egno == 30:
+    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
+    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **(4/3)/ c_in_H_fn(x_arr, t_arr)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
+    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.maximum(-p, 0.0) **(4/3)/ c_in_H_fn(x_arr, t_arr)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p-cubic_solver(param**3/c_in_H_fn(x_arr, t_arr), -param**3*p/c_in_H_fn(x_arr, t_arr)), 0.0)
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p-cubic_solver(param**3/c_in_H_fn(x_arr, t_arr), -param**3*p/c_in_H_fn(x_arr, t_arr)), 0.0)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
