@@ -277,7 +277,7 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
   else:
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
-  if egno == 3:
+  if egno == 3 or egno == 31:
     J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
   elif egno < 10:
     J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
@@ -324,7 +324,7 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
   elif egno == 21:  # linear H(p) = p
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 30:  # H(p) = p^4/4
+  elif egno == 30 or egno == 31:  # H(p) = p^4/4
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
@@ -353,7 +353,7 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
     Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
     Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p
     Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p + 1.0
-  elif egno == 30:
+  elif egno == 30 or egno == 31:
     H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
     H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
     Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **(4/3)/ c_in_H_fn(x_arr, t_arr)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
