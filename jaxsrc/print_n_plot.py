@@ -73,7 +73,7 @@ def compute_EO_forward_solution_1d_general(nt, dt, dspatial, fns_dict, g, x_arr,
     phi = []
     phi.append(g)
     for i in range(nt-1):
-        print('index for t: {}'.format(i))
+        # print('index for t: {}'.format(i))
         dphidx_left = (phi[i] - jnp.roll(phi[i], 1))/dx
         dphidx_right = (jnp.roll(phi[i], -1) - phi[i])/dx
         H_val = H_plus_fn(dphidx_left, x_arr, i*dt) + H_minus_fn(dphidx_right, x_arr, i*dt)
@@ -357,6 +357,9 @@ def compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, 
     return phi_dense
 
 def main(argv):
+    for key, value in FLAGS.__flags.items():
+        print(value.name, ": ", value._value, flush=True)
+
     nt = FLAGS.nt
     nx = FLAGS.nx
     ny = FLAGS.ny
