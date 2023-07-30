@@ -101,7 +101,7 @@ def main(argv):
                     epsl = epsl, stepsz_param=stepsz_param)
   if ifsave:
     save_analysis.save(save_dir, filename_prefix, (results, errs_none))
-  print('phi: ', results[0][-1])
+  # print('phi: ', results[0][-1])
 
 
 
