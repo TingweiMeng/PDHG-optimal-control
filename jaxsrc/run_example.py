@@ -17,6 +17,7 @@ import pdhg1d_m_2var
 import pdhg1d_v_2var
 import pdhg1d_m_2var_test
 import pdhg2d_m
+import pdhg2d_m_old
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -77,8 +78,12 @@ def main(argv):
         fn_update_primal = pdhg2d_m.update_primal
         fn_update_dual = pdhg2d_m.update_dual
     else:
-      fn_update_primal = pdhg1d_m_2var.update_primal_1d
-      fn_update_dual = pdhg1d_m_2var.update_dual_1d
+      if ndim == 1:
+        fn_update_primal = pdhg1d_m_2var.update_primal_1d
+        fn_update_dual = pdhg1d_m_2var.update_dual_1d
+      else:
+        fn_update_primal = pdhg2d_m_old.update_primal
+        fn_update_dual = pdhg2d_m_old.update_dual
   else:
     if ndim == 1:
       fn_update_primal = pdhg1d_v_2var.update_primal_1d

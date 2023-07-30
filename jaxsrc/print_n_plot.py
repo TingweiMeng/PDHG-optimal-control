@@ -412,7 +412,7 @@ def main(argv):
         HJ_residual = compute_HJ_residual_EO_2d_general(phi, dt, [dx,dy], fns_dict, epsl, x_arr_2d, t_arr)
         if not jnp.any(jnp.isnan(phi_dense)):
             err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
-            plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname)
+            plot_solution_2d(phi, error, nt, nx, ny, T, x_period, y_period, figname, epsl=epsl)
 
     print('row 1: HJ residual {:.2E}'.format(jnp.mean(jnp.abs(HJ_residual))))
     print("row 2: err_l1_rel {:.2E}".format(err_l1_rel))

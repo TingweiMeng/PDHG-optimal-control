@@ -373,7 +373,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                                     epsl = epsl, stepsz_param=stepsz_param)
       if jnp.any(jnp.isnan(errs)):
-        if stepsz_param > stepsz_param_min:
+        if stepsz_param > stepsz_param_min + stepsz_param_delta:
           stepsz_param -= stepsz_param_delta
           print('pdhg does not conv at t_ind = {}, decrease step size to {}'.format(i, stepsz_param), flush = True)
         else:
