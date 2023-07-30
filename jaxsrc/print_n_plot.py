@@ -401,7 +401,7 @@ def main(argv):
     # compute error
     if ndim == 1:
         x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
-        t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None]  # [nt-1, 1]
+        t_arr = jnp.linspace(dt, T, num = nt - 1)[:,None]  # [nt-1, 1]
         HJ_residual = compute_HJ_residual_EO_1d_general(phi, dt, [dx], fns_dict, epsl, x_arr, t_arr)
         if not jnp.any(jnp.isnan(phi_dense)):
             err_l1, err_l1_rel, error = compute_err_1d(phi, phi_dense)
@@ -411,7 +411,7 @@ def main(argv):
         y_arr = jnp.linspace(0.0, y_period-dy, num = ny)
         x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')
         x_arr_2d = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
-        t_arr = jnp.linspace(0.0, T, num = nt - 1)[:,None,None]  # [nt-1, 1,1]
+        t_arr = jnp.linspace(dt, T, num = nt - 1)[:,None,None]  # [nt-1, 1,1]
         HJ_residual = compute_HJ_residual_EO_2d_general(phi, dt, [dx,dy], fns_dict, epsl, x_arr_2d, t_arr)
         if not jnp.any(jnp.isnan(phi_dense)):
             err_l1, err_l1_rel, error = compute_err_2d(phi, phi_dense)
