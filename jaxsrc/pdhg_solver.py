@@ -437,10 +437,14 @@ def main(argv):
 
   eps = 1e-6
   T = 1
-  x_period = 2
+  x_period, y_period = 2, 2
   c_on_rho = 10.0
+  if ndim == 1:
+    period_spatial = [x_period]
+  else:
+    period_spatial = [x_period, y_period]
 
-  J, fns_dict = set_up_example_fns(egno, ndim, x_period, 2, theoretical_ver=theoretical_ver)
+  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, theoretical_ver=theoretical_ver)
 
   dx = x_period / (nx)
   dt = T / (nt-1)
@@ -511,10 +515,15 @@ def main(argv):
       phi_true.append(jnp.roll(phi_true[-1], 1, axis=1))
     phi_true = jnp.concatenate(phi_true, axis = 0)  
   else:
-    nx_dense, ny_dense = 600, 600
+    nx_dense = 600
     nt_dense = 601
-    y_period = x_period
-    phi_true_finer = compute_ground_truth(egno, nt_dense, nx_dense, ny_dense, ndim, T, x_period, y_period, epsl = epsl)
+    if ndim == 1:
+      nspatial_dense = [nx_dense]
+      period_spatial = [x_period]
+    else:
+      nspatial_dense = [nx_dense, nx_dense]
+      period_spatial = [x_period, y_period]
+    phi_true_finer = compute_ground_truth(egno, nt_dense, nspatial_dense, ndim, T, period_spatial, epsl = epsl)
     phi_true = get_sol_on_coarse_grid_1d(phi_true_finer, nt, nx)
   err = jnp.linalg.norm(results[-1][-1] - phi_true) / jnp.maximum(jnp.linalg.norm(phi_true), 1)
   print('phi error: ', err, flush=True)

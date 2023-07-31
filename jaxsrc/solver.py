@@ -262,7 +262,7 @@ def solve_HJ_EO_1d(J_on_grids, fn_H_plus, fn_H_minus, x, nt, dt, dx):
   return jnp.stack(phi_list, axis = 0)
 
 
-def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
+def set_up_example_fns(egno, ndim, period_spatial, theoretical_ver = False):
   '''
   @ parameters:
     egno, ndim: int
@@ -273,8 +273,10 @@ def set_up_example_fns(egno, ndim, x_period, y_period, theoretical_ver = False):
   print('egno: ', egno, flush=True)
 
   if ndim == 1:
+    x_period = period_spatial[0]
     alpha = 2 * jnp.pi / x_period
   else:
+    x_period, y_period = period_spatial[0], period_spatial[1]
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
   if egno == 3 or egno == 31:
@@ -421,8 +423,6 @@ if __name__ == "__main__":
   egno = 1
   x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)  # [nx+1]
   t_arr = np.linspace(0.0, T, num = nt, endpoint = True)  # [nt]
-
-  # J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
 
   dx = x_period / (nx)
   dt = T / (nt-1)
