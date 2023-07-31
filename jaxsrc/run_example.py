@@ -39,7 +39,7 @@ def main(argv):
   print('nx: ', nx)
   print('ny: ', ny)
 
-  N_maxiter = 10000000
+  N_maxiter = 1000000000
   print_freq = 10000
   eps = 1e-6
   T = 1

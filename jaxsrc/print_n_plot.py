@@ -355,7 +355,7 @@ def get_save_dir(time_stamp, egno, ndim, nt, nx, ny):
 
 def get_cfl_condition(nx_dense, T, x_period, epsl=0, ndim=1):
   dx_dense = x_period / nx_dense
-  dt_dense = 0.9/(epsl / (dx_dense**2) + 2/dx_dense) / ndim
+  dt_dense = 0.01/(epsl / (dx_dense**2) + 2/dx_dense) / ndim
   nt_dense = int(T / dt_dense) + 2
   return nt_dense
 
