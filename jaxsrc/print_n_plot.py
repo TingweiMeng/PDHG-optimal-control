@@ -391,7 +391,7 @@ def compute_ground_truth(egno, nt_dense, n_spatial, ndim, T, period_spatial, eps
   print('ground truth: nt {}, n_spatial {}'.format(nt_dense, n_spatial))
   if ndim == 1:
     J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, theoretical_ver=False)
-    if egno == 0 and epsl == 0.0:
+    if egno == 0 and epsl == 0.0 and ndim == 1:
       print('compute true soln using eg0 epsl 0.0 solver')
       phi_dense = compute_true_soln_eg0(nt_dense, n_spatial, ndim, T, period_spatial, J)
     # elif egno == 10 and epsl == 0.0:
@@ -412,7 +412,7 @@ def compute_ground_truth(egno, nt_dense, n_spatial, ndim, T, period_spatial, eps
         nt_dense = 2 * (nt_dense - 1) + 1
   elif ndim == 2:
     J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, theoretical_ver=False)
-    if egno == 0 and epsl == 0.0:
+    if egno == 0 and epsl == 0.0 and ndim == 1:
       print('compute true soln using eg0 epsl 0.0 solver')
       phi_dense = compute_true_soln_eg0(nt_dense, n_spatial, ndim, T, period_spatial, J)
     # elif egno == 10 and epsl == 0.0:
@@ -477,7 +477,7 @@ def main(argv):
       return
     true_sol = read_raw_file(true_filename)
   else: # compute true solution
-    if (egno == 0 or egno == 10) and (epsl == 0.0):
+    if egno == 0 and (epsl == 0.0) and ndim == 1:
       if nx_dense == 0:
         nx_dense, ny_dense = nx, ny
         nt_dense = nt

@@ -357,11 +357,14 @@ def set_up_example_fns(egno, ndim, period_spatial, theoretical_ver = False):
     Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p + 1.0
   elif egno == 30 or egno == 31:
     H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
-    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
-    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **(4/3)/ c_in_H_fn(x_arr, t_arr)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
-    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.maximum(-p, 0.0) **(4/3)/ c_in_H_fn(x_arr, t_arr)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p-cubic_solver(param**3/c_in_H_fn(x_arr, t_arr), -param**3*p/c_in_H_fn(x_arr, t_arr)), 0.0)
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p-cubic_solver(param**3/c_in_H_fn(x_arr, t_arr), -param**3*p/c_in_H_fn(x_arr, t_arr)), 0.0)
+    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
+    Hstar_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr)* (jnp.maximum(p, 0.0)/ c_in_H_fn(x_arr, t_arr)) **(4/3)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
+    Hstar_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * (jnp.maximum(-p, 0.0)/ c_in_H_fn(x_arr, t_arr)) **(4/3)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
+    # Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p-cubic_solver(param**3/c_in_H_fn(x_arr, t_arr), -param**3*p/c_in_H_fn(x_arr, t_arr)), 0.0)
+    # Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p-cubic_solver(param**3/c_in_H_fn(x_arr, t_arr), -param**3*p/c_in_H_fn(x_arr, t_arr)), 0.0)
+    c_fn = lambda p, param, x_arr, t_arr: cubic_solver(0*p + param/c_in_H_fn(x_arr, t_arr), -p/c_in_H_fn(x_arr, t_arr))
+    Hstar_plus_prox_fn = lambda p, c, x, t: jnp.maximum(c_fn(p,c,x,t)**3 * c_in_H_fn(x, t), 0.0)
+    Hstar_minus_prox_fn = lambda p, c, x, t: jnp.minimum(c_fn(p,c,x,t)**3 * c_in_H_fn(x, t), 0.0)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   

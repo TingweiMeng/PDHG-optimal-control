@@ -291,10 +291,9 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
     # err2: dual error
-    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0) ** 2
+    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
     for v0, v1 in zip(v_prev, v_next):
-      err2 += jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0) ** 2
-    err2 = jnp.sqrt(err2)
+      err2 += jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0)
     # err3: equation error
     if ndim == 1:
       HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
@@ -317,6 +316,17 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
       results_all.append((i, v_next, rho_prev, [], phi_prev))
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
+      # plot figures
+      plt.figure()
+      plt.contourf(phi_next)
+      plt.colorbar()
+      plt.savefig('phi_iter{}.png'.format(i))
+      plt.close()
+      plt.figure()
+      plt.contourf(rho_next)
+      plt.colorbar()
+      plt.savefig('rho_iter{}.png'.format(i))
+      plt.close()
     rho_prev = rho_next
     phi_prev = phi_next
     v_prev = v_next
