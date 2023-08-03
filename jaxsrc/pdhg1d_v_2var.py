@@ -41,6 +41,7 @@ def update_v_1d(v_prev, phi, rho, sigma, dspatial, c_on_rho, fns_dict, x_arr, t_
   Hstar_plus_prox_fn = fns_dict.Hstar_plus_prox_fn
   Hstar_minus_prox_fn = fns_dict.Hstar_minus_prox_fn
   param = sigma / (rho + c_on_rho + eps)
+  # param = sigma
   vp_next_raw = vp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx]
   vm_next_raw = vm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx]
   vp_next = Hstar_minus_prox_fn(vp_next_raw, param, x_arr, t_arr)  # [nt-1, nx]
