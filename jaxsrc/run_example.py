@@ -35,13 +35,13 @@ def main(argv):
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   theoretical_ver = FLAGS.theoretical_scheme
   ifL1usem = FLAGS.ifL1usem
+  eps = FLAGS.eps
 
   print('nx: ', nx)
   print('ny: ', ny)
 
   N_maxiter = 1000000000
   print_freq = 10000
-  eps = 1e-6
   T = 1
   x_period, y_period = 2, 2
 
@@ -131,5 +131,7 @@ if __name__ == '__main__':
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
   flags.DEFINE_boolean('theoretical_scheme', True, 'true if aligned with theory')
   flags.DEFINE_boolean('ifL1usem', True, 'true if use m method in L1 case')
+
+  flags.DEFINE_float('eps', 1e-6, 'the error threshold')
   
   app.run(main)
