@@ -287,7 +287,7 @@ def set_up_example_fns(egno, ndim, period_spatial, theoretical_ver = False):
     J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
   elif egno == 11:
     J = lambda x: 0 * x[...,0]
-  elif egno == 12 or egno == 30:
+  elif egno == 12 or egno == 30 or egno == 32:
     J = lambda x: -jnp.sum((x-1)**2, axis=-1)/10
   elif egno == 21:
     # J = lambda x: jnp.sum(-(x-1)**2/2 + 2, axis = -1)
@@ -329,6 +329,14 @@ def set_up_example_fns(egno, ndim, period_spatial, theoretical_ver = False):
   elif egno == 30 or egno == 31:  # H(p) = p^4/4
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
+  elif egno == 32:
+    if ndim == 1:
+      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
+                                          (x[...,0] -x_period - t - 0.5)**2/2)
+    elif ndim == 2:
+      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
+                                          (x[...,0] -x_period - t - 0.5)**2/2) - (x[...,1] - 1)**2/4
+    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
 
@@ -355,7 +363,7 @@ def set_up_example_fns(egno, ndim, period_spatial, theoretical_ver = False):
     Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p)
     Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p
     Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0.0 * p + 1.0
-  elif egno == 30 or egno == 31:
+  elif egno >=30 and egno < 40:
     H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
     H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) **4/4 + f_in_H_fn(x_arr, t_arr)/2
     Hstar_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr)* (jnp.maximum(p, 0.0)/ c_in_H_fn(x_arr, t_arr)) **(4/3)/(4/3) - f_in_H_fn(x_arr, t_arr)/2
