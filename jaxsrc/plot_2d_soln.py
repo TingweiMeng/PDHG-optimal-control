@@ -49,6 +49,9 @@ def plot_solution_2d(phi, nt, n_spatial, T, period_spatial, figname, epsl=0.0, T
     
 
 def main(argv):
+  for key, value in FLAGS.__flags.items():
+    print(value.name, ": ", value._value, flush=True)
+
   nt = FLAGS.nt
   nx = FLAGS.nx
   ny = FLAGS.ny
@@ -63,8 +66,6 @@ def main(argv):
   T = 1
   period_spatial = [2, 2]
   plot_foldername = "eg{}_{}d/".format(egno, ndim)
-  if FLAGS.plot_folder != '':
-    plot_foldername += FLAGS.plot_folder + '/'
   if FLAGS.hero_folder != '':
     plot_foldername = FLAGS.hero_folder + '/' + plot_foldername
   if not os.path.exists(plot_foldername):
@@ -84,4 +85,5 @@ if __name__ == '__main__':
   flags.DEFINE_string('figname', '2d_solution', 'figure name')
   flags.DEFINE_string('numerical_sol_filename', '', 'the name of the pickle file of numerical solution to read')
   flags.DEFINE_integer('T_divisor', 4, 'number of figures to plot')
+  flags.DEFINE_string('hero_folder', '', 'the folder name of hero run')
   app.run(main)
