@@ -409,7 +409,10 @@ def compute_ground_truth(egno, nt_dense, n_spatial, ndim, T, period_spatial, eps
                                                         fns_dict, g, x_arr, epsl = epsl)
         if not jnp.any(jnp.isnan(phi_dense)):
           break
+        else:
+          print('nan error: nt = {}, nspatial = {}'.format(nt_dense, n_spatial))
         nt_dense = 2 * (nt_dense - 1) + 1
+        dt_dense = T / (nt_dense - 1)
   elif ndim == 2:
     J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, theoretical_ver=False)
     if egno == 0 and epsl == 0.0 and ndim == 1:
@@ -429,7 +432,10 @@ def compute_ground_truth(egno, nt_dense, n_spatial, ndim, T, period_spatial, eps
                                                     fns_dict, g, x_arr, epsl=epsl)
         if not jnp.any(jnp.isnan(phi_dense)):
           break
+        else:
+          print('nan error: nt = {}, nspatial = {}'.format(nt_dense, n_spatial))
         nt_dense = 2 * (nt_dense - 1) + 1
+        dt_dense = T / (nt_dense - 1)
   else:
     raise ValueError("ndim should be 1 or 2")
   print('finished computing, shape phi_dense {}'.format(jnp.shape(phi_dense)))
