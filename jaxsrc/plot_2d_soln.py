@@ -72,7 +72,7 @@ def main(argv):
     os.makedirs(plot_foldername)
 
   num_sol = read_solution(num_filename)
-  plot_solution_2d(num_sol, nt, n_spatial, T, period_spatial, figname, epsl, T_divisor)
+  plot_solution_2d(num_sol, nt, n_spatial, T, period_spatial, plot_foldername, epsl, T_divisor)
 
 
 if __name__ == '__main__':
