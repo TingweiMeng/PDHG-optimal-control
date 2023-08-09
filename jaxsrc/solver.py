@@ -380,13 +380,7 @@ def set_up_example_fns(egno, ndim, period_spatial, theoretical_ver = False):
     Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
                                         'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
                                         'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
-    if theoretical_ver: # using right stencil for increasing H and left stencil for decreasing H
-      fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        H_plus_fn=H_minus_fn, H_minus_fn=H_plus_fn,
-                        Hstar_plus_fn=Hstar_minus_fn, Hstar_minus_fn=Hstar_plus_fn,
-                        Hstar_plus_prox_fn=Hstar_minus_prox_fn, Hstar_minus_prox_fn=Hstar_plus_prox_fn)
-    else:
-      fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
                         H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
                         Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
                         Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)

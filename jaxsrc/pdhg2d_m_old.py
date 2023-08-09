@@ -6,7 +6,6 @@ import utils
 from einshape import jax_einshape as einshape
 import os
 import solver
-from solver import interpolation_x, interpolation_t
 import pickle
 import matplotlib.pyplot as plt
 from pdhg_solver import Dx_left_increasedim, Dx_right_decreasedim, Dt_decreasedim, Dt_increasedim, Dxx_decreasedim, Dxx_increasedim
