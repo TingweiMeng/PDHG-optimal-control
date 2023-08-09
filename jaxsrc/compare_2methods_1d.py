@@ -102,9 +102,9 @@ def main(argv):
   rept_num = 1 # 10  # repeat running iterations this many times
   eps = 1e-6
   T = 1
-  x_period, y_period = 2, 2
+  x_period = 2
 
-  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
+  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, [x_period])
 
   dx = x_period / (nx)
   dt = T / (nt-1)

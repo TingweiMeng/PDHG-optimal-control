@@ -73,6 +73,7 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, m_prev_ls, tau, dt, dspatial,
 def update_dual_1d(phi_bar, rho_prev, c_on_rho, m_prev_ls, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim):
   m_prev = m_prev_ls[0]
   dx = dspatial[0]
+  rho_lb = -c_on_rho + 1e-4
   f_in_H = fns_dict.f_in_H_fn(x_arr, t_arr)
   c_in_H = fns_dict.c_in_H_fn(x_arr, t_arr)
   rho_candidates = []
@@ -80,16 +81,16 @@ def update_dual_1d(phi_bar, rho_prev, c_on_rho, m_prev_ls, sigma, dt, dspatial, 
   z_left = jnp.roll(z, 1, axis = 1) # [vec1(:,end), vec1(:,1:end-1)]
   alp = rho_prev + sigma * (Dt_decreasedim(phi_bar, dt) - epsl * Dxx_decreasedim(phi_bar, dx) + f_in_H) # [nt-1, nx]
 
-  rho_candidates.append(-c_on_rho * jnp.ones_like(rho_prev))  # left bound
+  rho_candidates.append(rho_lb * jnp.ones_like(rho_prev))  # left bound
   # two possible quadratic terms on G, 4 combinations
   vec3 = -c_in_H * c_in_H * c_on_rho + z * c_in_H
   vec4 = -c_in_H * c_in_H * c_on_rho - z_left * c_in_H
-  rho_candidates.append(jnp.maximum(alp, - c_on_rho))  # for rho large, G = 0
-  rho_candidates.append(jnp.maximum((alp + vec3)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) - z_i
-  rho_candidates.append(jnp.maximum((alp + vec4)/(1+ c_in_H*c_in_H), - c_on_rho))#  % if G_i = (rho_i + c)c(xi) + z_{i-1}
-  rho_candidates.append(jnp.maximum((alp + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), - c_on_rho)) # we have both terms above
-  rho_candidates.append(jnp.maximum(-c_on_rho + z / c_in_H, - c_on_rho)) # boundary term 1
-  rho_candidates.append(jnp.maximum(-c_on_rho - z_left / c_in_H, - c_on_rho)) # boundary term 2
+  rho_candidates.append(jnp.maximum(alp, rho_lb))  # for rho large, G = 0
+  rho_candidates.append(jnp.maximum((alp + vec3)/(1+ c_in_H*c_in_H), rho_lb))#  % if G_i = (rho_i + c)c(xi) - z_i
+  rho_candidates.append(jnp.maximum((alp + vec4)/(1+ c_in_H*c_in_H), rho_lb))#  % if G_i = (rho_i + c)c(xi) + z_{i-1}
+  rho_candidates.append(jnp.maximum((alp + vec3 + vec4)/(1+ 2*c_in_H*c_in_H), rho_lb)) # we have both terms above
+  rho_candidates.append(jnp.maximum(-c_on_rho + z / c_in_H, rho_lb)) # boundary term 1
+  rho_candidates.append(jnp.maximum(-c_on_rho - z_left / c_in_H, rho_lb)) # boundary term 2
   
   rho_candidates = jnp.array(rho_candidates) # [7, nt-1, nx]
   rho_next = get_minimizer_ind(rho_candidates, alp, c_on_rho, z, c_in_H)

@@ -131,7 +131,7 @@ def update_dual(phi_bar, rho_prev, c_on_rho, m_prev_ls, sigma, dt, dspatial, eps
 
   m1_next = jnp.minimum(jnp.maximum(z1, -(jnp.roll(rho_next, -1, axis = 1) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 1)), 
                         (rho_next + c_on_rho) * c_in_H)
-  # m2 is truncation of z2 into [-(rho_{i,j}+c)c(xi,yj), (rho_{i,j+1}+c)c(xi, y_{j+1})]
+  # m2 is truncation of z2 into [-(rho_{i,j+1}+c)c(xi,y_{j+1}), (rho_{i,j}+c)c(xi, y_{j})]
   m2_next = jnp.minimum(jnp.maximum(z2, -(jnp.roll(rho_next, -1, axis = 2) + c_on_rho) * jnp.roll(c_in_H, -1, axis = 2)),
                         (rho_next + c_on_rho) * c_in_H)
   return rho_next, (m1_next, m2_next)
