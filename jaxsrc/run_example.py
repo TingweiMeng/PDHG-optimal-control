@@ -1,18 +1,10 @@
-import jax
 import jax.numpy as jnp
-from einshape import jax_einshape as einshape
-import utils
-import numpy as np
 from absl import app, flags, logging
-import pickle
 from solver import set_up_example_fns
 import pytz
 from datetime import datetime
-import os
-import save_analysis
-from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d
 from pdhg_solver import PDHG_multi_step
-import matplotlib.pyplot as plt
+from solver import save
 import pdhg1d_m_2var
 import pdhg1d_v_2var
 import pdhg2d_m_old
@@ -43,7 +35,11 @@ def main(argv):
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
   logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
-  save_dir, filename_prefix = get_save_dir(time_stamp, egno, ndim, nt, nx, ny)
+  save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
+  if ndim == 1:
+    filename_prefix = 'nt{}_nx{}'.format(nt, nx)
+  elif ndim == 2:
+    filename_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
 
   dx = x_period / (nx)
   dy = y_period / (ny)
@@ -55,7 +51,7 @@ def main(argv):
   else:
     period_spatial = [x_period, y_period]
   
-  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, theoretical_ver=False)
+  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial)
 
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
@@ -95,7 +91,7 @@ def main(argv):
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param)
   if ifsave:
-    save_analysis.save(save_dir, filename_prefix, (results, errs_none))
+    save(save_dir, filename_prefix, (results, errs_none))
   print('phi: ', results[0][-1])
 
 

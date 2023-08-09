@@ -1,8 +1,6 @@
-import jax
 import jax.numpy as jnp
-from einshape import jax_einshape as einshape
 import numpy as np
-from absl import app, flags, logging
+from absl import app, flags
 import matplotlib.pyplot as plt
 import os
 from print_n_plot import read_solution
@@ -55,7 +53,6 @@ def main(argv):
   nt = FLAGS.nt
   nx = FLAGS.nx
   ny = FLAGS.ny
-  figname = FLAGS.figname
   epsl = FLAGS.epsl
   T_divisor = FLAGS.T_divisor
   egno = FLAGS.egno
@@ -82,7 +79,6 @@ if __name__ == '__main__':
   flags.DEFINE_integer('ny', 100, 'number of grid points in y')
   flags.DEFINE_integer('egno', 0, 'example number')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
-  flags.DEFINE_string('figname', '2d_solution', 'figure name')
   flags.DEFINE_string('numerical_sol_filename', '', 'the name of the pickle file of numerical solution to read')
   flags.DEFINE_integer('T_divisor', 4, 'number of figures to plot')
   flags.DEFINE_string('hero_folder', '', 'the folder name of hero run')

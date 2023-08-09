@@ -1,0 +1,2 @@
+This coupled system of PDEs differs slightly from the HJ PDE~\eqref{eqt:cont_HJ_eqt}, with the distinction that the first row entails an inequality rather than an equality. As indicated by the final row, if $\rho(x,t)\neq 0$ for all $x,t$, the initial inequality in the first row transforms into an equality, thus yielding a solution to the HJ PDE~\eqref{eqt:cont_HJ_eqt}. 
+The difference between the first row and the HJ PDE~\eqref{eqt:cont_HJ_eqt} is because we added a constraint $\rho \geq 0$ in the saddle point problem [...]. For more details, see [...]. 

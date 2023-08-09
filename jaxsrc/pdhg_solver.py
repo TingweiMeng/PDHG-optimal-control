@@ -1,15 +1,8 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-from functools import partial
 import utils
 from einshape import jax_einshape as einshape
-import os
-import solver
-from solver import interpolation_x, interpolation_t
-import pickle
-from save_analysis import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
-import matplotlib.pyplot as plt
+from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
 
 @jax.jit
 def Dx_right_decreasedim(phi, dx):
@@ -254,10 +247,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   rho_prev = rho0
   v_prev = v0
 
-  c_max = 50 * c_on_rho
-  delta_c = 50
-
-  # scale = 1.0
   scale = 1.5
   tau_phi = stepsz_param / scale
   tau_rho = stepsz_param * scale
@@ -309,34 +298,10 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
       print("Nan error at iter {}".format(i))
       break
-    # if jnp.min(rho_next) < -c_on_rho + eps and c_on_rho < c_max:
-    #   print('increase c value from {} to {}'.format(c_on_rho, c_on_rho + delta_c), flush = True)
-    #   c_on_rho += delta_c
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, v_next, rho_prev, [], phi_prev))
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
-      # plot figures
-      # plt.figure()
-      # plt.contourf(phi_next)
-      # plt.colorbar()
-      # plt.savefig('phi_iter{}.png'.format(i))
-      # plt.close()
-      # plt.figure()
-      # plt.contourf(rho_next)
-      # plt.colorbar()
-      # plt.savefig('rho_iter{}.png'.format(i))
-      # plt.close()
-      # err_tmp1 = Dt_decreasedim(phi_next, dt) - epsl * Dxx_decreasedim(phi_next, dx)
-      # err_tmp1 += v_prev[0]*Dx_right_decreasedim(phi_next, dx) + v_prev[1]*Dx_left_decreasedim(phi_next, dx)
-      # err_tmp1 -= fns_dict.Hstar_plus_fn(v_next[1], x_arr, t_arr) - fns_dict.Hstar_minus_fn(v_next[0], x_arr, t_arr)
-      # print('err_tmp1: ', jnp.mean(jnp.abs(err_tmp1)), flush=True)
-      # err_tmp2_1 = jnp.abs(jnp.minimum(Dx_right_decreasedim(phi_next, dx),0)**3 - v_next[0])
-      # err_tmp2_2 = jnp.abs(jnp.maximum(Dx_left_decreasedim(phi_next, dx),0)**3 - v_next[1])
-      # print('err_tmp2_1: ', jnp.mean(err_tmp2_1), flush=True)
-      # print('err_tmp2_2: ', jnp.mean(err_tmp2_2), flush=True)
-      # print('max of v_plus: ', jnp.max(v_next[0]), flush=True)
-      # print('min of v_minus: ', jnp.min(v_next[1]), flush=True)
     rho_prev = rho_next
     phi_prev = phi_next
     v_prev = v_next
@@ -355,13 +320,13 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
   if ndim == 1:
     nx = nspatial[0]
-    rho0 = jnp.zeros([time_step_per_PDHG-1, nx])
+    rho0 = jnp.zeros([time_step_per_PDHG-1, nx]) + c_on_rho
     vp0 = jnp.zeros([time_step_per_PDHG-1, nx])
     vm0 = jnp.zeros([time_step_per_PDHG-1, nx])
     v0 = (vp0, vm0)
   else:
     nx, ny = nspatial[0], nspatial[1]
-    rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny]) + c_on_rho
     vxp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
     vxm0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
     vyp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
