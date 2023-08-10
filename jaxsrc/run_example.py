@@ -24,13 +24,13 @@ def main(argv):
   epsl = FLAGS.epsl
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   eps = FLAGS.eps
+  T = FLAGS.T
 
   print('nx: ', nx)
   print('ny: ', ny)
 
   N_maxiter = 1000000000
   print_freq = 10000
-  T = 1
   x_period, y_period = 2, 2
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
@@ -109,6 +109,7 @@ if __name__ == '__main__':
   flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
+  flags.DEFINE_float('T', 1.0, 'final time')
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
 
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
