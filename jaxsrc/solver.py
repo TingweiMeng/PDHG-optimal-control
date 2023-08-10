@@ -4,6 +4,9 @@ from functools import partial
 from einshape import jax_einshape as einshape
 import jax
 from collections import namedtuple
+import os
+import pickle
+from utils import timer
 
 jax.config.update("jax_enable_x64", True)
 
@@ -240,6 +243,14 @@ def save(save_dir, filename, results):
     pickle.dump(results, file)
     print('saved to {}'.format(file), flush = True)
 
+def save_raw(filename, results):
+  foldername = os.path.dirname(filename)
+  if not os.path.exists(foldername):
+    os.makedirs(foldername)
+  with open(filename, 'wb') as file:
+    pickle.dump(results, file)
+    print('saved to {}'.format(file), flush = True)
+
 def compute_xarr(ndim, n_spatial, period_spatial):
   '''
     @params:
@@ -453,7 +464,7 @@ def compute_true_soln_eg0(nt, n_spatial, ndim, T, period_spatial, J):
   phi_dense = jnp.stack(phi_dense_list, axis = 0)
   return phi_dense
 
-def explicit_EO_general(egno, ndim, n_spatial, period_spatial, T, epsl, trial_num = 10):
+def explicit_EO_general(egno, ndim, nt_dense, n_spatial, period_spatial, T, epsl, trial_num = 10):
   print('compute true soln using general solver')
   if ndim == 1:
     compute_true_soln_fn = compute_EO_forward_solution_1d_general
@@ -478,11 +489,13 @@ def explicit_EO_general(egno, ndim, n_spatial, period_spatial, T, epsl, trial_nu
 
 def compute_ground_truth(egno, nt_dense, n_spatial, ndim, T, period_spatial, epsl = 0.0):
   print('computing ground truth... nt {}, n_spatial {}'.format(nt_dense, n_spatial))
+  timer.tic('computing ground truth')
   if egno == 0 and epsl == 0.0 and ndim == 1:
     print('compute true soln using eg0 1d epsl=0.0 solver')
     J, fns_dict = set_up_example_fns(egno, ndim, period_spatial)
     phi_dense = compute_true_soln_eg0(nt_dense, n_spatial, ndim, T, period_spatial, J)
   else:
-    phi_dense = explicit_EO_general(egno, ndim, n_spatial, period_spatial, T, epsl, trial_num = 10)
+    phi_dense = explicit_EO_general(egno, ndim, nt_dense, n_spatial, period_spatial, T, epsl, trial_num = 10)
+  timer.toc('computing ground truth')
   print('finished computing, shape phi_dense {}'.format(jnp.shape(phi_dense)))
   return phi_dense
