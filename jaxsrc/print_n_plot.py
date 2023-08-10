@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import os
 from solver import set_up_example_fns, compute_xarr, compute_ground_truth, compute_err_1d, compute_err_2d
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
-from solver import read_solution, read_raw_file
+from solver import read_solution, read_raw_file, save_raw
 from functools import partial
 
 
@@ -157,9 +157,14 @@ def main(argv):
     else:
       n_spatial = [nx_dense, ny_dense]
     true_sol = compute_ground_truth(egno, nt_dense, n_spatial, ndim, T, period_spatial, epsl=epsl)
-    with open(true_filename, 'wb') as file:
-      pickle.dump(true_sol, file)
-      print('saved to {}'.format(file), flush = True)
+    # save true solution
+    save_raw(true_filename, true_sol)
+    # foldername = os.path.dirname(true_filename)
+    # if not os.path.exists(foldername):
+    #   os.makedirs(foldername)
+    # with open(true_filename, 'wb') as file:
+    #   pickle.dump(true_sol, file)
+    #   print('saved to {}'.format(file), flush = True)
 
   dt = T / (nt - 1)
   dx = x_period / nx
