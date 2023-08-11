@@ -379,6 +379,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
     v_all.append(jnp.stack(v_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, 2**ndim] or [time_step_per_PDHG-1, nx, ny, 1]
     rho_all.append(rho_curr)
     g_diff = phi_curr[-1:,...] - phi0[0:1,...]
+    print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
     phi0 = phi0 + g_diff
     rho0 = rho_curr
     v0 = v_curr
