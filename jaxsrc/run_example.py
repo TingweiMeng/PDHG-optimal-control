@@ -5,9 +5,9 @@ import pytz
 from datetime import datetime
 from pdhg_solver import PDHG_multi_step
 from solver import save
-import pdhg1d_m_2var
-import pdhg1d_v_2var
-import pdhg2d_m_old
+import pdhg1d_m as pdhg1d_m
+import pdhg_v as pdhg_v
+import pdhg2d_m as pdhg2d_m
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -63,19 +63,19 @@ def main(argv):
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
-  if egno < 10:
+  if (egno == 2 or egno == 3) and FLAGS.method_id == 2:
     if ndim == 1:
-      fn_update_primal = pdhg1d_m_2var.update_primal_1d
-      fn_update_dual = pdhg1d_m_2var.update_dual_1d
+      fn_update_primal = pdhg1d_m.update_primal_1d
+      fn_update_dual = pdhg1d_m.update_dual_1d
     else:
-      fn_update_primal = pdhg2d_m_old.update_primal
-      fn_update_dual = pdhg2d_m_old.update_dual
+      fn_update_primal = pdhg2d_m.update_primal
+      fn_update_dual = pdhg2d_m.update_dual
   else:
     if ndim == 1:
-      fn_update_primal = pdhg1d_v_2var.update_primal_1d
+      fn_update_primal = pdhg_v.update_primal_1d
     else:
-      fn_update_primal = pdhg1d_v_2var.update_primal_2d
-    fn_update_dual = pdhg1d_v_2var.update_dual
+      fn_update_primal = pdhg_v.update_primal_2d
+    fn_update_dual = pdhg_v.update_dual
 
   if ndim == 1:
     dspatial = [dx]
@@ -104,13 +104,14 @@ if __name__ == '__main__':
   flags.DEFINE_integer('nx', 20, 'size of x grids')
   flags.DEFINE_integer('ny', 20, 'size of y grids')
   flags.DEFINE_integer('ndim', 1, 'spatial dimension')
-  flags.DEFINE_integer('egno', 11, 'index of example')
+  flags.DEFINE_integer('egno', 1, 'index of example')
   flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
   flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('T', 1.0, 'final time')
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
+  flags.DEFINE_integer('method_id', 1, 'method id: 1 for v, 2 for m')
 
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
   

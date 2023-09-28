@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import utils
 from einshape import jax_einshape as einshape
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
+import matplotlib.pyplot as plt
 
 @jax.jit
 def Dx_right_decreasedim(phi, dx):
@@ -231,8 +232,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     rho0: [nt-1, nx]
     v0: [vp0, vm0], where vp0 and vm0 are [nt-1, nx] (if using m method, this is [m0,0], where m0 is [nt-1, nx])
     dx, dt, c_on_rho: scalar
-    fns_dict: dict of functions, if using vmethod, should contain Hstar_plus_prox_fn, Hstar_minus_prox_fn, Hstar_plus_fn, Hstar_minus_fn
-                      in both cases, should contain H_plus_fn, H_minus_fn
+    fns_dict: dict of functions, see the function set_up_example_fns in solver.py
     f_in_H: [1, nx] or [nt-1, nx]
     c_in_H: [1, nx] or [nt-1, nx]
     epsl: scalar, diffusion coefficient
@@ -286,11 +286,18 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     # err3: equation error
     if ndim == 1:
       HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+      # if err1 < 1e-6 and err2 < 1e-6:
+      #   print('err 1: ', err1, 'err 2: ', err2, flush = True)
+      #   plt.close('all')
+      #   plt.figure()
+      #   plt.contourf(HJ_residual)
+      #   plt.colorbar()
+      #   plt.savefig('HJ_residual.png')
     elif ndim == 2:
       HJ_residual = compute_HJ_residual_EO_2d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
     err3 = jnp.mean(jnp.abs(HJ_residual))
     
-    error = jnp.array([err1, err2,err3])
+    error = jnp.array([err1, err2, err3])
     error_all.append(error)
     if error[2] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)

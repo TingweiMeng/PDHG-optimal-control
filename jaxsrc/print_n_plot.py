@@ -149,7 +149,6 @@ if __name__ == "__main__":
     flags.DEFINE_integer('ny_dense', 0, 'size of y grids for dense solution')
     flags.DEFINE_integer('ndim', 1, 'dimensionality')
     flags.DEFINE_integer('egno', 1, 'index of example')
-    # flags.DEFINE_string('numerical_sol_filename', '', 'the name of the pickle file of numerical solution to read')
     flags.DEFINE_list("numerical_sol_filenames", [], "A list of the name of the pickle file of numerical solution to read")
     flags.DEFINE_string('true_sol_filename', '', 'the name of the true solution, if does not exists, compute and save')
     flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
