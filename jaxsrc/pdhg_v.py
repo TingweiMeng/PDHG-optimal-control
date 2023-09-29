@@ -152,7 +152,7 @@ def update_primal_2d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fv
   return phi_next
 
 
-# @partial(jax.jit, static_argnames=("fns_dict", "ndim"))
+@partial(jax.jit, static_argnames=("fns_dict", "ndim"))
 def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim):
   if ndim == 1:
     update_v = update_v_1d
