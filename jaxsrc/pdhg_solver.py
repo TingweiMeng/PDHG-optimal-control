@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import utils
 from einshape import jax_einshape as einshape
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
-import matplotlib.pyplot as plt
 
 @jax.jit
 def Dx_right_decreasedim(phi, dx):
@@ -286,13 +285,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     # err3: equation error
     if ndim == 1:
       HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
-      # if err1 < 1e-6 and err2 < 1e-6:
-      #   print('err 1: ', err1, 'err 2: ', err2, flush = True)
-      #   plt.close('all')
-      #   plt.figure()
-      #   plt.contourf(HJ_residual)
-      #   plt.colorbar()
-      #   plt.savefig('HJ_residual.png')
     elif ndim == 2:
       HJ_residual = compute_HJ_residual_EO_2d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
     err3 = jnp.mean(jnp.abs(HJ_residual))

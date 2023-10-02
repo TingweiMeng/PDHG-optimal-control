@@ -1,16 +1,10 @@
-import jax
 import jax.numpy as jnp
-from einshape import jax_einshape as einshape
-import numpy as np
 from absl import app, flags
-import pickle
-import matplotlib.pyplot as plt
 import os
 from solver import set_up_example_fns, compute_xarr, compute_ground_truth, compute_err_1d, compute_err_2d
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
 from solver import read_solution, read_raw_file, save_raw
 import plot_soln
-from functools import partial
 
 
 

@@ -63,7 +63,7 @@ def main(argv):
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
-  if (egno == 2 or egno == 3) and FLAGS.method_id == 2:
+  if egno == 2:
     if ndim == 1:
       fn_update_primal = pdhg1d_m.update_primal_1d
       fn_update_dual = pdhg1d_m.update_dual_1d
@@ -111,7 +111,6 @@ if __name__ == '__main__':
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('T', 1.0, 'final time')
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
-  flags.DEFINE_integer('method_id', 1, 'method id: 1 for v, 2 for m')
   flags.DEFINE_integer('N_maxiter', 1000000, 'maximum number of iterations')
 
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')

@@ -11,14 +11,6 @@ from utils import timer
 jax.config.update("jax_enable_x64", True)
 
 
-# @jax.jit
-def cubic_solver(p,q):  # solve x^3 + px + q = 0
-  sqrt_delta = jnp.sqrt(p**2/4 + q**3/27)
-  num1 = -q/2 + sqrt_delta
-  num2 = -q/2 - sqrt_delta
-  sol = jnp.sign(num1) * jnp.abs(num1) **(1/3) + jnp.sign(num2) * jnp.abs(num2) **(1/3)
-  return sol
-
 
 def tridiagonal_solve(dl, d, du, b): 
   """Pure JAX implementation of `tridiagonal_solve`.""" 
@@ -134,21 +126,6 @@ def set_up_example_fns(egno, ndim, period_spatial):
     else:
       raise ValueError("ndim {} not implemented".format(ndim))
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 5:  # new example
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    f_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 6:
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    if ndim == 1:
-      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t - 0.5)**2/2)
-    elif ndim == 2:
-      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t - 0.5)**2/2) - (x[...,1] - 1)**2/4
-    else:
-      raise ValueError("ndim {} not implemented".format(ndim))
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
 
@@ -157,7 +134,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
   # H_plus_fn, H_minus_fn, H_fn are only used in this function and compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general, compute_EO_forward_solution_1d_general, compute_EO_forward_solution_2d_general
   # Hstar_plus_fn, Hstar_minus_fn, Hstar_fn are only used in pdhg_v.py
   # Hstar_plus_prox_fn, Hstar_minus_prox_fn Hstar_prox_fn (or H_prox_fn) are only used in pdhg_v.py
-  if egno == 2 or egno == 3:  # c(x,t)|p|_1 + f(x,t)
+  if egno == 2:  # c(x,t)|p|_1 + f(x,t)
     H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) + f_in_H_fn(x_arr, t_arr)/2/ndim
     H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) + f_in_H_fn(x_arr, t_arr)/2/ndim
     Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2/ndim # + indicator(p>=0)
@@ -171,7 +148,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
     Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2/ndim
     Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
     Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
-  elif egno == 5 or egno == 6:  # scheme for |p|_2 + f(x,t), non-seperable case, the indicator function is omitted
+  elif egno == 3:  # scheme for |p|_2 + f(x,t), non-seperable case, the indicator function is omitted
     if ndim == 1:
       H_fn = lambda p, x_arr, t_arr: jnp.sqrt(jnp.minimum(p[0],0)**2 + jnp.maximum(p[1],0)**2) + f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...,ndim] and [...]
       Hstar_fn = lambda p, x_arr, t_arr: -f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...]
@@ -198,7 +175,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
-  if ndim == 1 and egno != 5 and egno != 6:
+  if ndim == 1 and egno != 3:  # separable case
     Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
                                         'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
                                         'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
@@ -206,7 +183,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
                         H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
                         Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
                         Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
-  elif ndim == 2 and egno != 5 and egno != 6:
+  elif ndim == 2 and egno != 3:  # separable case
     Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
                                         'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn',
                                         'Hxstar_plus_fn', 'Hxstar_minus_fn', 'Hystar_plus_fn', 'Hystar_minus_fn',
@@ -217,7 +194,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
                         Hystar_plus_fn=Hstar_plus_fn, Hystar_minus_fn=Hstar_minus_fn,
                         Hxstar_plus_prox_fn=Hstar_plus_prox_fn, Hxstar_minus_prox_fn=Hstar_minus_prox_fn,
                         Hystar_plus_prox_fn=Hstar_plus_prox_fn, Hystar_minus_prox_fn=Hstar_minus_prox_fn)
-  elif egno == 5 or egno == 6:
+  elif egno == 3:  # non-separable case
     Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 'H_fn', 'Hstar_fn', 'Hstar_prox_fn'])
     fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
                         H_fn=H_fn, Hstar_fn=Hstar_fn, Hstar_prox_fn=Hstar_prox_fn)

@@ -1,13 +1,9 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 from functools import partial
-import utils
 from einshape import jax_einshape as einshape
 import os
 import solver
-import pickle
-import matplotlib.pyplot as plt
 from pdhg_solver import Dx_left_increasedim, Dx_right_decreasedim, Dt_decreasedim, Dt_increasedim, Dxx_decreasedim, Dxx_increasedim
 from pdhg_solver import Dy_left_increasedim, Dy_right_decreasedim, Dyy_decreasedim, Dyy_increasedim
 

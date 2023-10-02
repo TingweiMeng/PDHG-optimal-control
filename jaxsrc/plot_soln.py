@@ -125,6 +125,8 @@ def main(argv):
   n_spatial = num_sol.shape[1:]  
   plot_fn(num_sol, nt, n_spatial, T, period_spatial, plot_foldername, 'solution', epsl, T_divisor = T_divisor)
 
+  print('plotting done')
+
 
 if __name__ == '__main__':
   FLAGS = flags.FLAGS
