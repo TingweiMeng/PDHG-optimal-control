@@ -1,65 +1,13 @@
-import jax
 import jax.numpy as jnp
-from einshape import jax_einshape as einshape
-import utils
-from pdhg1d_m_2var import pdhg_1d_periodic_rho_m_EO_L1_xdep as pdhg_method1_2var
-from pdhg1d_v_2var import pdhg_1d_periodic_rho_m_EO_L1_xdep as pdhg_method2_2var
-import numpy as np
 from absl import app, flags, logging
-import pickle
 from solver import set_up_example_fns
 import pytz
 from datetime import datetime
-import os
-import save_analysis
-from print_n_plot import get_save_dir, get_sol_on_coarse_grid_1d, compute_ground_truth
-
-
-def method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 
-                    f_in_H, c_in_H, phi0, rho0, m0, g, dx, dt, save_dir, filename_prefix):
-  # save_dir = save_dir + '/method1_2var'
-  utils.timer.tic('method 1 with 2 var')
-  iter_no = 0
-  for i in range(rept_num):
-    results, errors = pdhg_method1_2var(f_in_H, c_in_H, phi0, rho0, m0, stepsz_param, 
-                                        g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps,
-                                        epsl = epsl)
-    iter_no += results[-1][0]
-    if ifsave:
-      filename = filename_prefix + '_iter{}'.format(iter_no)
-      save_analysis.save(save_dir, filename, (results, errors))
-    if results[-1][0] < N_maxiter:
-      break
-    m0 = results[-1][1]
-    rho0 = results[-1][-3]
-    phi0 = results[-1][-1]
-  utils.timer.toc('method 1 with 2 var')
-  m = results[-1][1]
-  rho = results[-1][-3]
-  phi = results[-1][-1]
-  return phi, rho, m
-
-
-# def method2_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param, 
-#                     f_in_H, c_in_H, phi0, rho0, v0, g, dx, dt, save_dir, filename_prefix):
-#   save_dir = save_dir + '/method2_2var'
-#   utils.timer.tic('method 2 with 2 var')
-#   iter_no = 0
-#   for i in range(rept_num):
-#     results, errors = pdhg_method2_2var(f_in_H, c_in_H, phi0, rho0, v0, stepsz_param, 
-#                                         g, dx, dt, c_on_rho, if_precondition, N_maxiter = N_maxiter, print_freq = 10000, eps = eps,
-#                                         epsl = epsl)
-#     iter_no += results[-1][0]
-#     if ifsave:
-#       filename = filename_prefix + '_iter{}'.format(iter_no)
-#       save_analysis.save(save_dir, filename, (results, errors))
-#     if results[-1][0] < N_maxiter:
-#       break
-#     v0 = results[-1][1]
-#     rho0 = results[-1][-3]
-#     phi0 = results[-1][-1]
-#   utils.timer.toc('method 2 with 2 var')
-  
+from pdhg_solver import PDHG_multi_step
+from solver import save
+import pdhg1d_m as pdhg1d_m
+import pdhg_v as pdhg_v
+import pdhg2d_m as pdhg2d_m
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -67,85 +15,104 @@ def main(argv):
 
   nt = FLAGS.nt
   nx = FLAGS.nx
+  ny = FLAGS.ny
+  ndim = FLAGS.ndim
   egno = FLAGS.egno
   ifsave = FLAGS.ifsave
   stepsz_param = FLAGS.stepsz_param
-  if_precondition = FLAGS.if_precondition
   c_on_rho = FLAGS.c_on_rho
   epsl = FLAGS.epsl
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
+  eps = FLAGS.eps
+  T = FLAGS.T
 
-  N_maxiter = 1000000
-  rept_num = 10  # repeat running iterations this many times
-  eps = 1e-6
-  T = 1
+  print('nx: ', nx)
+  print('ny: ', ny)
+
+  N_maxiter = FLAGS.N_maxiter
+  print_freq = 10000
   x_period, y_period = 2, 2
-
-  J, f_in_H_fn, c_in_H_fn = set_up_example_fns(egno, 1, x_period, y_period)
-
-  dx = x_period / (nx)
-  dt = T / (nt-1)
-  assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
-  nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
-  spatial_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
-  g = J(spatial_arr)  # [1, nx]
-  f_in_H = f_in_H_fn(spatial_arr)  # [1, nx]
-  c_in_H = c_in_H_fn(spatial_arr)  # [1, nx]
-
-  phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
-  rho0 = jnp.zeros([time_step_per_PDHG-1, nx])
-  m0 = jnp.zeros([time_step_per_PDHG-1, nx])
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
   logging.info("current time: " + datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S"))
+  save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
+  if ndim == 1:
+    filename_prefix = 'nt{}_nx{}'.format(nt, nx)
+  elif ndim == 2:
+    filename_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
 
-  save_dir, filename_prefix = get_save_dir(time_stamp, egno, 1, nt, nx, 0)
+  dx = x_period / (nx)
+  dy = y_period / (ny)
+  dt = T / (nt-1)
+  x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
+
+  if ndim == 1:
+    period_spatial = [x_period]
+  else:
+    period_spatial = [x_period, y_period]
   
-  print("nt = {}, nx = {}".format(nt, nx))
-  print("shape g {}, f {}, c {}".format(jnp.shape(g), jnp.shape(f_in_H), jnp.shape(c_in_H)))
+  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial)
 
-  # use results from method 1 as initialization for method 2
-  # method 1 with 2 vars
-  phi_all = []
-  rho_all = []
-  m_all = []
-  for i in range(nt_PDHG):
-    print('nt_PDHG = {}, i = {}'.format(nt_PDHG, i), flush=True)
-    save_dir_curr = save_dir + '/nt_PDHG_{}'.format(i)
-    phi_curr, rho_curr, m_curr = method1_2var(rept_num, eps, epsl, N_maxiter, ifsave, if_precondition, c_on_rho, stepsz_param,
-                  f_in_H, c_in_H, phi0, rho0, m0, g, dx, dt, save_dir_curr, filename_prefix)
-    if i < nt_PDHG-1:
-      phi_all.append(phi_curr[:-1,:])
-      rho_all.append(rho_curr[:-1,:])
-      m_all.append(m_curr[:-1,:])
+  if ndim == 1:
+    x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
+  else:
+    x_arr = jnp.linspace(0.0, x_period - dx, num = nx)  
+    y_arr = jnp.linspace(0.0, x_period - dy, num = ny)
+    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')  # [nx, ny]
+    x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
+  g = J(x_arr)  # [1, nx] or [1, nx, ny]
+  print('shape of g: ', g.shape)
+
+  if egno == 2:
+    if ndim == 1:
+      fn_update_primal = pdhg1d_m.update_primal_1d
+      fn_update_dual = pdhg1d_m.update_dual_1d
     else:
-      phi_all.append(phi_curr)
-      rho_all.append(rho_curr)
-      m_all.append(m_curr)
-    g_diff = phi_curr[-1:,:] - phi0[0:1,:]
-    phi0 = phi0 + g_diff
-    rho0 = rho_curr
-    m0 = m_curr
-  phi_all = jnp.concatenate(phi_all, axis = 0)
-  rho_all = jnp.concatenate(rho_all, axis = 0)
-  m_all = jnp.concatenate(m_all, axis = 0)
-  filename = filename_prefix + 'final_results'
-  results = [(0, m_all, rho_all, [], phi_all)]
-  errors = []
-  save_analysis.save(save_dir, filename, (results, errors))
+      fn_update_primal = pdhg2d_m.update_primal
+      fn_update_dual = pdhg2d_m.update_dual
+  else:
+    if ndim == 1:
+      fn_update_primal = pdhg_v.update_primal_1d
+    else:
+      fn_update_primal = pdhg_v.update_primal_2d
+    fn_update_dual = pdhg_v.update_dual
+
+  if ndim == 1:
+    dspatial = [dx]
+    nspatial = [nx]
+  else:
+    dspatial = [dx, dy]
+    nspatial = [nx, ny]
+    print('dspatial: ', dspatial)
+    print('nspatial: ', nspatial)
+  
+  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+                    g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
+                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
+                    epsl = epsl, stepsz_param=stepsz_param)
+  if ifsave:
+    save(save_dir, filename_prefix, (results, errs_none))
+  print('phi: ', results[0][-1])
+
+
+
 
 
 if __name__ == '__main__':
   FLAGS = flags.FLAGS
   flags.DEFINE_integer('nt', 11, 'size of t grids')
   flags.DEFINE_integer('nx', 20, 'size of x grids')
+  flags.DEFINE_integer('ny', 20, 'size of y grids')
+  flags.DEFINE_integer('ndim', 1, 'spatial dimension')
   flags.DEFINE_integer('egno', 1, 'index of example')
   flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
-  flags.DEFINE_float('stepsz_param', 0.9, 'default step size constant')
-  flags.DEFINE_boolean('if_precondition', True, 'if use preconditioning')
+  flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
-
+  flags.DEFINE_float('T', 1.0, 'final time')
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
+  flags.DEFINE_integer('N_maxiter', 1000000, 'maximum number of iterations')
+
+  flags.DEFINE_float('eps', 1e-6, 'the error threshold')
   
   app.run(main)
