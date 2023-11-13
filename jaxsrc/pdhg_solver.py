@@ -243,6 +243,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   @ returns:
   '''
   phi_prev = phi0
+  phi_bar = phi0
   rho_prev = rho0
   v_prev = v0
 
@@ -270,16 +271,15 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   results_all = []
 
   for i in range(N_maxiter):
+    rho_next, v_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, v_prev, tau_rho, dt, dspatial, epsl, 
+                                      fns_dict, x_arr, t_arr, ndim)
     phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, v_prev, tau_phi, dt, dspatial, fv, epsl)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
-    rho_next, v_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, v_prev, tau_rho, dt, dspatial, epsl, 
-                                      fns_dict, x_arr, t_arr, ndim)
-
     # primal error
-    err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
+    err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 0.01)
     # err2: dual error
-    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 0.01)
     for v0, v1 in zip(v_prev, v_next):
       err2 += jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0)
     # err3: equation error
@@ -298,7 +298,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
       print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
-      results_all.append((i, v_next, rho_prev, [], phi_prev))
+      results_all.append((i, v_next, rho_prev, phi_prev))
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
     rho_prev = rho_next
@@ -306,7 +306,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     v_prev = v_next
   # print the final error
   print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
-  results_all.append((i+1, v_next, rho_next, None, phi_next))
+  results_all.append((i+1, v_next, rho_next, phi_next))
   return results_all, jnp.array(error_all)
 
 
@@ -351,7 +351,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
       t_arr = t_arr[:,None]  # [time_step_per_PDHG-1, 1]
     else:
       t_arr = t_arr[:,None,None]  # [time_step_per_PDHG-1, 1, 1]
-    while True:
+    while True:  # auto adjust pdhg parameters
       results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
                                     dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
@@ -367,7 +367,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
       else:
         max_err = jnp.maximum(max_err, errs[-1][-1])
         break
-    _, v_curr, rho_curr, _, phi_curr = results_all[-1]
+    _, v_curr, rho_curr, phi_curr = results_all[-1]
     utils.timer.toc('pdhg_iter{}'.format(i))
     utils.timer.toc('all_time')
 
