@@ -387,7 +387,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
   phi_out = jnp.concatenate(phi_all, axis = 0)
   v_out = jnp.concatenate(v_all, axis = 0)
   rho_out = jnp.concatenate(rho_all, axis = 0)
-  results_out = [(0, v_out, rho_out, None, phi_out)]
+  results_out = [(0, v_out, rho_out, phi_out)]
   print('\n\n')
   print('===========================================')
   utils.timer.toc('all_time')

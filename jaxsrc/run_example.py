@@ -76,12 +76,12 @@ def main(argv):
     print('dspatial: ', dspatial)
     print('nspatial: ', nspatial)
   
-  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+  results = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param)
   if ifsave:
-    save(save_dir, filename_prefix, (results, errs_none))
+    save(save_dir, filename_prefix, results)
   print('phi: ', results[0][-1])
 
 
