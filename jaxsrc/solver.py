@@ -447,8 +447,7 @@ def compute_EO_forward_solution_2d_general(nt, dt, dspatial, fns_dict, g, x_arr,
 
 def read_solution(filename):
   with open(filename, 'rb') as f:
-    results, errors = pickle.load(f)
-  # compute errors
+    results = pickle.load(f)
   phi = results[-1][-1]
   return phi
 
