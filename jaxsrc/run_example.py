@@ -5,9 +5,7 @@ import pytz
 from datetime import datetime
 from pdhg_solver import PDHG_multi_step
 from solver import save
-import pdhg1d_m as pdhg1d_m
 import pdhg_v as pdhg_v
-import pdhg2d_m as pdhg2d_m
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -63,19 +61,11 @@ def main(argv):
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
-  if egno == 2:
-    if ndim == 1:
-      fn_update_primal = pdhg1d_m.update_primal_1d
-      fn_update_dual = pdhg1d_m.update_dual_1d
-    else:
-      fn_update_primal = pdhg2d_m.update_primal
-      fn_update_dual = pdhg2d_m.update_dual
+  if ndim == 1:
+    fn_update_primal = pdhg_v.update_primal_1d
   else:
-    if ndim == 1:
-      fn_update_primal = pdhg_v.update_primal_1d
-    else:
-      fn_update_primal = pdhg_v.update_primal_2d
-    fn_update_dual = pdhg_v.update_dual
+    fn_update_primal = pdhg_v.update_primal_2d
+  fn_update_dual = pdhg_v.update_dual
 
   if ndim == 1:
     dspatial = [dx]
