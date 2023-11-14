@@ -68,6 +68,29 @@ def Poisson_eqt_solver(source_term, fv, dt):
   phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
   return phi_update
 
+def Poisson_eqt_solver_termcond(source_term, fv, dt):
+  ''' this solves (D_{tt} + D_{xx}) phi_update = source_term
+  zero Neumann boundary condition at t=0; Dirichlet boundary condition at t=T
+  @parameters:
+    source_term: [nt, nx]
+    fv: [nx], complex, this is FFT of neg Laplacian -Dxx
+    dt: scalar
+  @return:
+    phi_update: [nt, nx]
+  '''
+  nt, nx = jnp.shape(source_term)
+  # exclude the last row wrt t
+  v_Fourier =  jnp.fft.fft(source_term[:-1,:], axis = 1)  # [nt-1, nx]
+  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  Lap_t_diag = jnp.array([-1/(dt*dt)] + [-2/(dt*dt)] * (nt-2))  # [nt-1]  # Neumann ic
+  Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx)  # [nt-1, nx]
+  thomas_b = einshape('n->mn', fv, m = nt-1) + Lap_t_diag_rep # [nt-1, nx]  
+  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) # [nt-1, nx]
+  F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
+  phi_update = jnp.concatenate([F_phi_updates, jnp.zeros((1,nx))], axis = 0) # [nt, nx]
+  return phi_update
+
 def Poisson_eqt_solver_2d(source_term, fv, dt):
   nt, nx, ny = jnp.shape(source_term)
   v_Fourier =  jnp.fft.fft2(source_term[1:,...], axes = (1,2)) # [nt-1, nx, ny]
@@ -131,6 +154,8 @@ def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
                           Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
     else:
       L_fn = lambda alp, x, t: alp ** 2 / 2
+      f_plus_fn = lambda alp, x, t: jnp.maximum(alp, 0.0)
+      f_minus_fn = lambda alp, x, t: jnp.minimum(alp, 0.0)
       def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma):
         can1 = (alp_prev - sigma * Dx_phi_left) / (1 + sigma)
         can1 = jnp.maximum(can1, 0.0)
@@ -142,12 +167,14 @@ def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
         return alp
       Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
                                           'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                          'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'L_fn', 'opt_alp_fn'])
+                                          'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'L_fn', 'opt_alp_fn',
+                                          'f_plus_fn', 'f_minus_fn'])
       fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
                           H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
                           Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
                           Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
-                          L_fn=L_fn, opt_alp_fn=opt_alp_fn)
+                          L_fn=L_fn, opt_alp_fn=opt_alp_fn,
+                          f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
