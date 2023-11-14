@@ -3,7 +3,7 @@ from absl import app, flags, logging
 from solver import set_up_example_fns
 import pytz
 from datetime import datetime
-from pdhg_solver import PDHG_multi_step
+from pdhg_solver import PDHG_multi_step_inverse
 from solver import save
 import utils_pdhg
 
@@ -82,7 +82,11 @@ def main(argv):
     print('dspatial: ', dspatial)
     print('nspatial: ', nspatial)
   
-  results = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+  # results = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+  #                   g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
+  #                   N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
+  #                   epsl = epsl, stepsz_param=stepsz_param)
+  results = PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param)
