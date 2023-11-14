@@ -243,6 +243,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   @ returns:
   '''
   phi_prev = phi0
+  phi_bar = phi0
   rho_prev = rho0
   v_prev = v0
 
@@ -270,11 +271,11 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   results_all = []
 
   for i in range(N_maxiter):
-    phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, v_prev, tau_phi, dt, dspatial, fv, epsl)
-    # extrapolation
-    phi_bar = 2 * phi_next - phi_prev
     rho_next, v_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, v_prev, tau_rho, dt, dspatial, epsl, 
                                       fns_dict, x_arr, t_arr, ndim)
+    phi_next = fn_update_primal(phi_prev, rho_next, c_on_rho, v_next, tau_phi, dt, dspatial, fv, epsl)
+    # extrapolation
+    phi_bar = 2 * phi_next - phi_prev
 
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
