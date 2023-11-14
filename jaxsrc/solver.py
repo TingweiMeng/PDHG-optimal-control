@@ -83,7 +83,7 @@ def Poisson_eqt_solver_2d(source_term, fv, dt):
 
 
 
-def set_up_example_fns(egno, ndim, period_spatial):
+def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
   '''
   @ parameters:
     egno: int
@@ -102,29 +102,9 @@ def set_up_example_fns(egno, ndim, period_spatial):
     x_period, y_period = period_spatial[0], period_spatial[1]
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
-  # NOTE: f_in_H_fn and c_in_H_fn are only used in this function and pdhg1d_m.py and pdhg2d_m.py
   if egno == 1:
     J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 2:
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 3:
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    f_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 4:
-    J = lambda x: -jnp.sum((x-1)**2, axis=-1)/10
-    if ndim == 1:
-      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t - 0.5)**2/2)
-    elif ndim == 2:
-      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t - 0.5)**2/2) - (x[...,1] - 1)**2/4
-    else:
-      raise ValueError("ndim {} not implemented".format(ndim))
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:
     raise ValueError("egno {} not implemented".format(egno))
@@ -134,72 +114,43 @@ def set_up_example_fns(egno, ndim, period_spatial):
   # H_plus_fn, H_minus_fn, H_fn are only used in this function and compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general, compute_EO_forward_solution_1d_general, compute_EO_forward_solution_2d_general
   # Hstar_plus_fn, Hstar_minus_fn, Hstar_fn are only used in pdhg_v.py
   # Hstar_plus_prox_fn, Hstar_minus_prox_fn Hstar_prox_fn (or H_prox_fn) are only used in pdhg_v.py
-  if egno == 2:  # c(x,t)|p|_1 + f(x,t)
-    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) + f_in_H_fn(x_arr, t_arr)/2/ndim
-    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) + f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2/ndim # + indicator(p>=0)
-    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2/ndim # + indicator(p<=0)
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(jnp.maximum(p, 0.0), c_in_H_fn(x_arr, t_arr))
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H_fn(x_arr, t_arr))
-  elif egno == 1 or egno == 4:  # c(x,t)|p|^2/2 + f(x,t)
-    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2/ndim
-    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
-  elif egno == 3:  # scheme for |p|_2 + f(x,t), non-seperable case, the indicator function is omitted
-    if ndim == 1:
-      H_fn = lambda p, x_arr, t_arr: jnp.sqrt(jnp.minimum(p[0],0)**2 + jnp.maximum(p[1],0)**2) + f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...,ndim] and [...]
-      Hstar_fn = lambda p, x_arr, t_arr: -f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...]
-      def Hstar_prox_fn(p, param, x_arr, t_arr):  # p is [2,...] (xp,xm), others can be broadcast to [...]
-        uxp, uxm = p[0], p[1]
-        uxp = jnp.minimum(uxp, 0)
-        uxm = jnp.maximum(uxm, 0)
-        norm = jnp.sqrt(uxp**2 + uxm**2)
-        norm = jnp.maximum(norm, 1.0)
-        return (uxp/norm, uxm/norm)  # TODO: check this and consistency for 1d case
-    elif ndim == 2:
-      H_fn = lambda p, x_arr, t_arr: jnp.sqrt(jnp.minimum(p[0],0)**2 + jnp.maximum(p[1],0)**2 + jnp.minimum(p[2],0)**2 \
-                            + jnp.maximum(p[3],0)**2) + f_in_H_fn(x_arr, t_arr)  # p is [4,...] (xp,xm,yp,ym), x_arr and t_arr can be broadcasted to [...,ndim] and [...]
-      Hstar_fn = lambda p, x_arr, t_arr: -f_in_H_fn(x_arr, t_arr)  # p is [4,...] (xp,xm,yp,ym), x_arr and t_arr can be broadcasted to [...]
-      def Hstar_prox_fn(p, param, x_arr, t_arr):  # p is [4,...] (xp,xm,yp,ym), others can be broadcast to [...]
-        uxp, uxm, uyp, uym = p[0], p[1], p[2], p[3]
-        uxp = jnp.minimum(uxp, 0)
-        uxm = jnp.maximum(uxm, 0)
-        uyp = jnp.minimum(uyp, 0)
-        uym = jnp.maximum(uym, 0)
-        norm = jnp.sqrt(uxp**2 + uxm**2 + uyp**2 + uym**2)
-        norm = jnp.maximum(norm, 1.0)
-        return (uxp/norm, uxm/norm, uyp/norm, uym/norm)  # TODO: check this and consistency for 1d case
+  if egno == 1:  # c(x,t)|p|^2/2 + f(x,t)
+    H_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p,0) ** 2/2
+    H_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p,0) ** 2/2
+    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/2
+    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/2
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param), 0.0)
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param), 0.0)
+    if baseline:
+      Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+                                          'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                          'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
+      fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+                          H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
+                          Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                          Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
+    else:
+      L_fn = lambda alp, x, t: alp ** 2 / 2
+      def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma):
+        can1 = (alp_prev - sigma * Dx_phi_left) / (1 + sigma)
+        can1 = jnp.maximum(can1, 0.0)
+        fn_val1 = can1 * Dx_phi_left + L_fn(can1, x_arr, t_arr)
+        can2 = (alp_prev - sigma * Dx_phi_right) / (1 + sigma)
+        can2 = jnp.minimum(can2, 0.0)
+        fn_val2 = can2 * Dx_phi_right + L_fn(can2, x_arr, t_arr)
+        alp = jnp.where(fn_val1 < fn_val2, can1, can2)
+        return alp
+      Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+                                          'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                          'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'L_fn', 'opt_alp_fn'])
+      fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+                          H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
+                          Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                          Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
+                          L_fn=L_fn, opt_alp_fn=opt_alp_fn)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
-  if ndim == 1 and egno != 3:  # separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
-                                        'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
-    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
-                        Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
-                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
-  elif ndim == 2 and egno != 3:  # separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
-                                        'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn',
-                                        'Hxstar_plus_fn', 'Hxstar_minus_fn', 'Hystar_plus_fn', 'Hystar_minus_fn',
-                                        'Hxstar_plus_prox_fn', 'Hxstar_minus_prox_fn', 'Hystar_plus_prox_fn', 'Hystar_minus_prox_fn'])
-    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        Hx_plus_fn=H_plus_fn, Hx_minus_fn=H_minus_fn, Hy_plus_fn=H_plus_fn, Hy_minus_fn=H_minus_fn,
-                        Hxstar_plus_fn=Hstar_plus_fn, Hxstar_minus_fn=Hstar_minus_fn,
-                        Hystar_plus_fn=Hstar_plus_fn, Hystar_minus_fn=Hstar_minus_fn,
-                        Hxstar_plus_prox_fn=Hstar_plus_prox_fn, Hxstar_minus_prox_fn=Hstar_minus_prox_fn,
-                        Hystar_plus_prox_fn=Hstar_plus_prox_fn, Hystar_minus_prox_fn=Hstar_minus_prox_fn)
-  elif egno == 3:  # non-separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 'H_fn', 'Hstar_fn', 'Hstar_prox_fn'])
-    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        H_fn=H_fn, Hstar_fn=Hstar_fn, Hstar_prox_fn=Hstar_prox_fn)
-  else:
-    raise ValueError("ndim {} not implemented".format(ndim))
   return J, fns_dict
 
 
