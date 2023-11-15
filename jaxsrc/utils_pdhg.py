@@ -11,49 +11,6 @@ from pdhg_solver import Dyy_decreasedim, Dyy_increasedim
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
-# def update_rho_1d_prev(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
-#   vp, vm = v[0], v[1]
-#   dx = dspatial[0]
-#   if 'Hstar_plus_fn' in fns_dict._fields and 'Hstar_minus_fn' in fns_dict._fields:  # seperable case
-#     Hstar_val = fns_dict.Hstar_plus_fn(vm, x_arr, t_arr) + fns_dict.Hstar_minus_fn(vp, x_arr, t_arr)
-#   elif 'Hstar_fn' in fns_dict._fields:  # non-seperable case
-#     Hstar_val = fns_dict.Hstar_fn(jnp.stack([vp, vm], axis = 0), x_arr, t_arr)
-#   else:
-#     raise "fns_dict must contain Hstar_fn or Hxstar_plus_fn, Hxstar_minus_fn, Hystar_plus_fn, Hystar_minus_fn"
-#   vec = Dx_right_decreasedim(phi, dx) * vp + Dx_left_decreasedim(phi, dx) * vm
-#   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
-#   vec = vec - Hstar_val
-#   rho_next = rho_prev + sigma * vec
-#   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
-#   return rho_next
-
-# def update_v_1d_prev(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
-#   '''
-#   @ parameters:
-#     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
-#     and output argmin_u H(u) + |x-u|^2/(2t)
-#   '''
-#   vp_prev, vm_prev = v_prev[0], v_prev[1]
-#   dx = dspatial[0]
-#   param = sigma / (rho + eps)
-#   vp_next_raw = vp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx]
-#   vm_next_raw = vm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx]
-#   if 'Hstar_plus_prox_fn' in fns_dict._fields and 'Hstar_minus_prox_fn' in fns_dict._fields:  # seperable case
-#     vp_next = fns_dict.Hstar_minus_prox_fn(vp_next_raw, param, x_arr, t_arr)  # [nt-1, nx]
-#     vm_next = fns_dict.Hstar_plus_prox_fn(vm_next_raw, param, x_arr, t_arr)  # [nt-1, nx]  
-#     v_next = (vp_next, vm_next)
-#   else:
-#     v_next_raw = jnp.stack([vp_next_raw, vm_next_raw], axis = 0)  # [2, nt-1, nx, ny] (xp, xm)
-#     if 'Hstar_prox_fn' in fns_dict._fields:
-#       v_next = fns_dict.Hstar_prox_fn(v_next_raw, 1/param, x_arr, t_arr)  # [2, nt-1, nx, ny]
-#     elif 'H_prox_fn' in fns_dict._fields:
-#       p_next = fns_dict.H_prox_fn(v_next_raw/param, param, x_arr, t_arr)  # [2, nt-1, nx, ny]
-#       v_next = v_next_raw - param * p_next  # [2, nt-1, nx, ny]
-#     else:
-#       raise NotImplementedError
-#   return v_next
-
-# TODO: epsl = 0 for now
 def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd, precond, fv):
   dx = dspatial[0]
   L_val = fns_dict.L_fn(alp, x_arr, t_arr)
@@ -83,18 +40,13 @@ def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
   dx = dspatial[0]
   Dx_phi_left = Dx_left_decreasedim(phi, dx)
   Dx_phi_right = Dx_right_decreasedim(phi, dx)
-  alp_update_plus = Dx_phi_left + alp_prev
-  alp_update_minus = Dx_phi_right + alp_prev
-  alp_update = jnp.where(alp_prev > 0, alp_update_plus, alp_update_minus)
-  # alp = 0* alp_prev + 1
-  alp = alp_prev - sigma * alp_update
   # print('Dx_phi_left', Dx_phi_left.shape)
   # print('Dx_phi_right', Dx_phi_right.shape)
   # print('x_arr', x_arr.shape)
   # print('t_arr', t_arr.shape)
   # print('alp_prev', alp_prev)
   # print('sigma', sigma, flush=True)
-  # alp = fns_dict.opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma)
+  alp = fns_dict.opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma)
   return alp
 
 # def update_rho_2d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
