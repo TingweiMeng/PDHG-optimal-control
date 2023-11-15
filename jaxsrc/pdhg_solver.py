@@ -367,96 +367,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   return results_all, jnp.array(error_all)
 
 
-# def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
-#                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
-#                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-#                     epsl = 0.0, stepsz_param=0.9):
-#   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
-#   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
-#   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
-#   if ndim == 1:
-#     nx = nspatial[0]
-#     rho0 = jnp.zeros([time_step_per_PDHG-1, nx]) + c_on_rho
-#     vp0 = jnp.zeros([time_step_per_PDHG-1, nx])
-#     vm0 = jnp.zeros([time_step_per_PDHG-1, nx])
-#     v0 = (vp0, vm0)
-#   else:
-#     nx, ny = nspatial[0], nspatial[1]
-#     rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny]) + c_on_rho
-#     vxp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-#     vxm0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-#     vyp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-#     vym0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-#     v0 = (vxp0, vxm0, vyp0, vym0)
-#     print('shape of phi0: ', jnp.shape(phi0), flush = True)
-  
-#   phi_all = []
-#   v_all = []
-#   rho_all = []
-
-#   stepsz_param_min = stepsz_param / 10
-#   stepsz_param_delta = stepsz_param / 10
-#   sol_nan = False
-#   max_err = 0
-  
-#   utils.timer.tic('all_time')
-#   for i in range(nt_PDHG):
-#     utils.timer.tic('pdhg_iter{}'.format(i))
-#     print('=================== nt_PDHG = {}, i = {} ==================='.format(nt_PDHG, i), flush=True)
-#     t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:]  # [time_step_per_PDHG-1]
-#     if ndim == 1:
-#       t_arr = t_arr[:,None]  # [time_step_per_PDHG-1, 1]
-#     else:
-#       t_arr = t_arr[:,None,None]  # [time_step_per_PDHG-1, 1, 1]
-#     while True:
-#       results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
-#                                     dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
-#                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-#                                     epsl = epsl, stepsz_param=stepsz_param)
-#       if jnp.any(jnp.isnan(errs)):
-#         if stepsz_param > stepsz_param_min + stepsz_param_delta:
-#           stepsz_param -= stepsz_param_delta
-#           print('pdhg does not conv at t_ind = {}, decrease step size to {}'.format(i, stepsz_param), flush = True)
-#         else:
-#           print('pdhg does not conv at t_ind = {}, algorithm failed'.format(i), flush = True)
-#           sol_nan = True
-#           break
-#       else:
-#         max_err = jnp.maximum(max_err, errs[-1][-1])
-#         break
-#     _, v_curr, rho_curr, _, phi_curr = results_all[-1]
-#     utils.timer.toc('pdhg_iter{}'.format(i))
-#     utils.timer.toc('all_time')
-
-#     if i < nt_PDHG-1:
-#       phi_all.append(phi_curr[:-1,:])
-#     else:
-#       phi_all.append(phi_curr)
-#     v_all.append(jnp.stack(v_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, 2**ndim] or [time_step_per_PDHG-1, nx, ny, 1]
-#     rho_all.append(rho_curr)
-#     g_diff = phi_curr[-1:,...] - phi0[0:1,...]
-#     print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
-#     phi0 = phi0 + g_diff
-#     rho0 = rho_curr
-#     v0 = v_curr
-#     if sol_nan:
-#       break
-#   phi_out = jnp.concatenate(phi_all, axis = 0)
-#   v_out = jnp.concatenate(v_all, axis = 0)
-#   rho_out = jnp.concatenate(rho_all, axis = 0)
-#   results_out = [(0, v_out, rho_out, phi_out)]
-#   print('\n\n')
-#   print('===========================================')
-#   utils.timer.toc('all_time')
-#   if sol_nan:
-#     print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
-#   else:
-#     print('pdhg conv. Max err is {:.2E}'.format(max_err), flush = True)
-#   return results_out
-
-
-
-
 def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
@@ -473,22 +383,16 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
     rho0 = jnp.zeros([time_step_per_PDHG-1, nx]) + c_on_rho
     v0 = jnp.zeros([time_step_per_PDHG-1, nx])
   else:
-    # nx, ny = nspatial[0], nspatial[1]
-    # rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny]) + c_on_rho
-    # vxp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    # vxm0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    # vyp0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    # vym0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    # v0 = (vxp0, vxm0, vyp0, vym0)
-    # print('shape of phi0: ', jnp.shape(phi0), flush = True)
     raise NotImplementedError
   
   phi_all = []
   v_all = []
   rho_all = []
 
-  stepsz_param_min = stepsz_param / 10
-  stepsz_param_delta = stepsz_param / 10
+  sigma_hj_min = sigma_hj / 10
+  sigma_hj_delta = sigma_hj / 10
+  sigma_cont_min = sigma_cont / 10
+  sigma_cont_delta = sigma_cont / 10
   sol_nan = False
   max_err = 0
   
@@ -510,9 +414,10 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
                                     epsl = epsl, fwd = fwd, sigma_hj=sigma_hj, sigma_cont=sigma_cont,
                                     precond_hj = precond_hj, precond_cont = precond_cont)
       if jnp.any(jnp.isnan(errs)):
-        if stepsz_param > stepsz_param_min + stepsz_param_delta:
-          stepsz_param -= stepsz_param_delta
-          print('pdhg does not conv at t_ind = {}, decrease step size to {}'.format(i, stepsz_param), flush = True)
+        if sigma_hj > sigma_hj_min + sigma_hj_delta and sigma_cont > sigma_cont_min + sigma_cont_delta:
+          sigma_hj -= sigma_hj_delta
+          sigma_cont -= sigma_cont_delta
+          print('pdhg does not conv at t_ind = {}, decrease sigma_hj to {}, sigma_cont to {}'.format(i, sigma_hj, sigma_cont), flush = True)
         else:
           print('pdhg does not conv at t_ind = {}, algorithm failed'.format(i), flush = True)
           sol_nan = True
@@ -550,7 +455,7 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
   print('===========================================')
   utils.timer.toc('all_time')
   if sol_nan:
-    print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
+    print('pdhg does not conv, please decrease sigma_hj and sigma_cont to be less than {:.2E} and {:.2E}'.format(sigma_hj_min, sigma_cont_min), flush = True)
   else:
     print('pdhg conv. Max err is {:.2E}'.format(max_err), flush = True)
   return results_out

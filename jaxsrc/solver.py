@@ -106,7 +106,7 @@ def Poisson_eqt_solver_2d(source_term, fv, dt):
 
 
 
-def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
+def set_up_example_fns(egno, ndim, period_spatial):
   '''
   @ parameters:
     egno: int
@@ -126,7 +126,8 @@ def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
   if egno == 1 or egno == 2:
-    J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
+    # J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
+    J = lambda x: jnp.sin(alpha * x)
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:

@@ -51,13 +51,8 @@ def main(argv):
   else:
     period_spatial = [x_period, y_period]
   
-  if FLAGS.method == 0:
-    J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, baseline = True)
-  elif FLAGS.method == 1:
-    J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, baseline = False)
-  else:
-    raise NotImplementedError
-
+  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, baseline = False)
+  
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
   else:
@@ -71,7 +66,6 @@ def main(argv):
   if ndim == 1:
     fn_update_primal = utils_pdhg.update_primal_1d
   else:
-    # fn_update_primal = utils_pdhg.update_primal_2d
     raise NotImplementedError
   fn_update_dual = utils_pdhg.update_dual
 
@@ -84,10 +78,6 @@ def main(argv):
     print('dspatial: ', dspatial)
     print('nspatial: ', nspatial)
   
-  # results = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
-  #                   g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
-  #                   N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-  #                   epsl = epsl, stepsz_param=stepsz_param)
   results = PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
@@ -115,7 +105,6 @@ if __name__ == '__main__':
   flags.DEFINE_integer('N_maxiter', 1000000, 'maximum number of iterations')
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
 
-  flags.DEFINE_integer('method', 1, '0 for previous version, 1 for new version')
   flags.DEFINE_boolean('fwd', False, 'implicit or explicit in HJ')
   flags.DEFINE_boolean('hj_precond', False, 'preconditioning for HJ')
   flags.DEFINE_boolean('cont_precond', False, 'preconditioning for continuity')
