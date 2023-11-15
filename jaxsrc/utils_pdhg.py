@@ -54,7 +54,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 #   return v_next
 
 # TODO: epsl = 0 for now
-def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd):
+def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd, precond, fv):
   dx = dspatial[0]
   L_val = fns_dict.L_fn(alp, x_arr, t_arr)
   f_plus_val = fns_dict.f_plus_fn(alp, x_arr, t_arr)
@@ -70,7 +70,11 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=fwd)  # [nt-1, nx]
   vec = vec + L_val
   print('vec: ', vec)
-  rho_next = rho_prev - sigma * vec
+  if precond:
+    rho_next = rho_prev - sigma * solver.Poisson_eqt_solver_termcond(vec, fv, dt)
+  else:
+    rho_next = rho_prev - sigma * vec
+  
   # print('rho_next in update: ', rho_next, flush=True)
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
@@ -174,14 +178,12 @@ def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
 #   phi_next = phi_prev - tau * solver.Poisson_eqt_solver(delta_phi, fv, dt)
 #   return phi_next
 
-@jax.jit
-def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fv, epsl, fwd):
+@partial(jax.jit, static_argnames=("fns_dict", ))
+def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fv, epsl, fwd, precond, fns_dict, x_arr, t_arr):
   dx = dspatial[0]
   eps = 1e-4
-  # for now, take f(alp) = alp 
-  # TODO!!!!!!!!!!!! change this !!!!!!!!!!!!!!
-  fp = jnp.maximum(alp_prev, 0.0)  # [nt-1, nx]
-  fm = jnp.minimum(alp_prev, 0.0)  # [nt-1, nx]
+  fp = fns_dict.f_plus_fn(alp_prev, x_arr, t_arr)
+  fm = fns_dict.f_minus_fn(alp_prev, x_arr, t_arr)
   # print('Dx_left_increasedim(fm, dx): ', Dx_left_increasedim(fm * rho_prev, dx))
   # print('Dx_right_increasedim(fp, dx): ', Dx_right_increasedim(fp * rho_prev, dx))
   delta_phi = Dx_left_increasedim(fm * rho_prev, dx, fwd=fwd) + Dx_right_increasedim(fp * rho_prev, dx, fwd=fwd) \
@@ -191,8 +193,10 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
   # print('Dt: ', Dt_increasedim(rho_prev,dt))
   delta_phi = jnp.concatenate([delta_phi[:1,...] - c_on_rho/dt, delta_phi[1:-1,...], 0*delta_phi[-1:,...]], axis = 0)
   # print('delta_phi: ', delta_phi)
-  # phi_next = phi_prev - tau * solver.Poisson_eqt_solver_termcond(delta_phi, fv, dt)
-  phi_next = phi_prev - tau * delta_phi
+  if precond:
+    phi_next = phi_prev - tau * solver.Poisson_eqt_solver_termcond(delta_phi, fv, dt)
+  else:
+    phi_next = phi_prev - tau * delta_phi
   return phi_next
 
 # @jax.jit
@@ -214,7 +218,8 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
 
 
 @partial(jax.jit, static_argnames=("fns_dict", "ndim"))
-def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim, fwd):
+def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, 
+                        fns_dict, ndim, fwd, precond, fv):
   if ndim == 1:
     # if 'opt_alp_fn' in fns_dict._fields:
     update_v = update_alp
@@ -235,15 +240,15 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial
   else:
     raise NotImplementedError
   v_next = update_v(v_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr)
-  rho_next = update_rho(rho_prev, phi_bar, v_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd)
+  rho_next = update_rho(rho_prev, phi_bar, v_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd, precond=precond, fv=fv)
   err = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
   for v0, v1 in zip(v_prev, v_next):
     err = jnp.maximum(err, jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0))
   return rho_next, v_next, err
 
 
-def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, fwd, 
-                   rho_v_iters=1, eps=1e-7):
+def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, fwd, fv,
+                   rho_v_iters=1, eps=1e-7, precond=False):
   '''
   @ parameters:
   fns_dict: dict of functions, see the function set_up_example_fns in solver.py
@@ -252,7 +257,7 @@ def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, 
     # print('v_prev', v_prev, flush=True)
     # print('rho_prev', v_prev, flush=True)
     rho_next, v_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl,
-                                                              x_arr, t_arr, fns_dict, ndim, fwd)
+                                                              x_arr, t_arr, fns_dict, ndim, fwd, precond=precond, fv=fv)
     if err < eps:
       break
     rho_prev = rho_next
