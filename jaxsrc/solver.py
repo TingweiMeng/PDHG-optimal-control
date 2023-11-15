@@ -125,7 +125,7 @@ def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
     x_period, y_period = period_spatial[0], period_spatial[1]
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
-  if egno == 1:
+  if egno == 1 or egno == 2:
     J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
@@ -175,13 +175,34 @@ def set_up_example_fns(egno, ndim, period_spatial, baseline=False):
                           Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
                           L_fn=L_fn, opt_alp_fn=opt_alp_fn,
                           f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn)
+      
+  elif egno == 2: # f(v) = v, L = indicator of 1
+    H_plus_fn = lambda p, x_arr, t_arr: p
+    H_minus_fn = lambda p, x_arr, t_arr: 0 * p
+    Hstar_plus_fn = lambda p, x_arr, t_arr: 0 * p
+    Hstar_minus_fn = lambda p, x_arr, t_arr: 0 * p
+    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0 * p + 1
+    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0 * p
+    L_fn = lambda alp, x, t: 0 * alp
+    f_plus_fn = lambda alp, x, t: alp
+    f_minus_fn = lambda alp, x, t: 0 * alp 
+    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+                                        'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'L_fn', 
+                                        'f_plus_fn', 'f_minus_fn'])
+    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
+                        H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
+                        Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
+                        L_fn=L_fn, 
+                        f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
   return J, fns_dict
 
 
-def compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
+def compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr, fwd = False):
   '''
   @parameters:
     phi: [nt, nx]
@@ -196,14 +217,20 @@ def compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, 
   dx = dspatial[0]
   dphidx_left = (phi - jnp.roll(phi, 1, axis = 1))/dx
   dphidx_right = (jnp.roll(phi, -1, axis=1) - phi)/dx
+  if fwd:
+    dphidx_left = dphidx_left[:-1,:]
+    dphidx_right = dphidx_right[:-1,:]
+  else:
+    dphidx_left = dphidx_left[1:,:]
+    dphidx_right = dphidx_right[1:,:]
   if 'H_plus_fn' in fns_dict._fields and 'H_minus_fn' in fns_dict._fields:
     H_plus_fn = fns_dict.H_plus_fn
     H_minus_fn = fns_dict.H_minus_fn
-    H_val = H_plus_fn(dphidx_left[1:,:], x_arr, t_arr) + H_minus_fn(dphidx_right[1:,:], x_arr, t_arr)  # [nt-1, nx]
+    H_val = H_plus_fn(dphidx_left, x_arr, t_arr) + H_minus_fn(dphidx_right, x_arr, t_arr)  # [nt-1, nx]
   elif 'H_fn' in fns_dict._fields:
-    H_val = fns_dict.H_fn(jnp.stack([dphidx_right, dphidx_left], axis = 0)[:,1:,:], x_arr, t_arr)  # [nt-1, nx]
+    H_val = fns_dict.H_fn(jnp.stack([dphidx_right, dphidx_left], axis = 0), x_arr, t_arr)  # [nt-1, nx]
   Lap = (dphidx_right - dphidx_left)/dx
-  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val - epsl * Lap[1:,:]
+  HJ_residual = (phi[1:,:] - phi[:-1,:])/dt + H_val - epsl * Lap
   return HJ_residual
 
 def compute_HJ_residual_EO_2d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):

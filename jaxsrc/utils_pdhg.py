@@ -11,47 +11,47 @@ from pdhg_solver import Dyy_decreasedim, Dyy_increasedim
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
-def update_rho_1d_prev(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
-  vp, vm = v[0], v[1]
-  dx = dspatial[0]
-  if 'Hstar_plus_fn' in fns_dict._fields and 'Hstar_minus_fn' in fns_dict._fields:  # seperable case
-    Hstar_val = fns_dict.Hstar_plus_fn(vm, x_arr, t_arr) + fns_dict.Hstar_minus_fn(vp, x_arr, t_arr)
-  elif 'Hstar_fn' in fns_dict._fields:  # non-seperable case
-    Hstar_val = fns_dict.Hstar_fn(jnp.stack([vp, vm], axis = 0), x_arr, t_arr)
-  else:
-    raise "fns_dict must contain Hstar_fn or Hxstar_plus_fn, Hxstar_minus_fn, Hystar_plus_fn, Hystar_minus_fn"
-  vec = Dx_right_decreasedim(phi, dx) * vp + Dx_left_decreasedim(phi, dx) * vm
-  vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
-  vec = vec - Hstar_val
-  rho_next = rho_prev + sigma * vec
-  rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
-  return rho_next
+# def update_rho_1d_prev(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
+#   vp, vm = v[0], v[1]
+#   dx = dspatial[0]
+#   if 'Hstar_plus_fn' in fns_dict._fields and 'Hstar_minus_fn' in fns_dict._fields:  # seperable case
+#     Hstar_val = fns_dict.Hstar_plus_fn(vm, x_arr, t_arr) + fns_dict.Hstar_minus_fn(vp, x_arr, t_arr)
+#   elif 'Hstar_fn' in fns_dict._fields:  # non-seperable case
+#     Hstar_val = fns_dict.Hstar_fn(jnp.stack([vp, vm], axis = 0), x_arr, t_arr)
+#   else:
+#     raise "fns_dict must contain Hstar_fn or Hxstar_plus_fn, Hxstar_minus_fn, Hystar_plus_fn, Hystar_minus_fn"
+#   vec = Dx_right_decreasedim(phi, dx) * vp + Dx_left_decreasedim(phi, dx) * vm
+#   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
+#   vec = vec - Hstar_val
+#   rho_next = rho_prev + sigma * vec
+#   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
+#   return rho_next
 
-def update_v_1d_prev(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
-  '''
-  @ parameters:
-    Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
-    and output argmin_u H(u) + |x-u|^2/(2t)
-  '''
-  vp_prev, vm_prev = v_prev[0], v_prev[1]
-  dx = dspatial[0]
-  param = sigma / (rho + eps)
-  vp_next_raw = vp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx]
-  vm_next_raw = vm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx]
-  if 'Hstar_plus_prox_fn' in fns_dict._fields and 'Hstar_minus_prox_fn' in fns_dict._fields:  # seperable case
-    vp_next = fns_dict.Hstar_minus_prox_fn(vp_next_raw, param, x_arr, t_arr)  # [nt-1, nx]
-    vm_next = fns_dict.Hstar_plus_prox_fn(vm_next_raw, param, x_arr, t_arr)  # [nt-1, nx]  
-    v_next = (vp_next, vm_next)
-  else:
-    v_next_raw = jnp.stack([vp_next_raw, vm_next_raw], axis = 0)  # [2, nt-1, nx, ny] (xp, xm)
-    if 'Hstar_prox_fn' in fns_dict._fields:
-      v_next = fns_dict.Hstar_prox_fn(v_next_raw, 1/param, x_arr, t_arr)  # [2, nt-1, nx, ny]
-    elif 'H_prox_fn' in fns_dict._fields:
-      p_next = fns_dict.H_prox_fn(v_next_raw/param, param, x_arr, t_arr)  # [2, nt-1, nx, ny]
-      v_next = v_next_raw - param * p_next  # [2, nt-1, nx, ny]
-    else:
-      raise NotImplementedError
-  return v_next
+# def update_v_1d_prev(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
+#   '''
+#   @ parameters:
+#     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
+#     and output argmin_u H(u) + |x-u|^2/(2t)
+#   '''
+#   vp_prev, vm_prev = v_prev[0], v_prev[1]
+#   dx = dspatial[0]
+#   param = sigma / (rho + eps)
+#   vp_next_raw = vp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx]
+#   vm_next_raw = vm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx]
+#   if 'Hstar_plus_prox_fn' in fns_dict._fields and 'Hstar_minus_prox_fn' in fns_dict._fields:  # seperable case
+#     vp_next = fns_dict.Hstar_minus_prox_fn(vp_next_raw, param, x_arr, t_arr)  # [nt-1, nx]
+#     vm_next = fns_dict.Hstar_plus_prox_fn(vm_next_raw, param, x_arr, t_arr)  # [nt-1, nx]  
+#     v_next = (vp_next, vm_next)
+#   else:
+#     v_next_raw = jnp.stack([vp_next_raw, vm_next_raw], axis = 0)  # [2, nt-1, nx, ny] (xp, xm)
+#     if 'Hstar_prox_fn' in fns_dict._fields:
+#       v_next = fns_dict.Hstar_prox_fn(v_next_raw, 1/param, x_arr, t_arr)  # [2, nt-1, nx, ny]
+#     elif 'H_prox_fn' in fns_dict._fields:
+#       p_next = fns_dict.H_prox_fn(v_next_raw/param, param, x_arr, t_arr)  # [2, nt-1, nx, ny]
+#       v_next = v_next_raw - param * p_next  # [2, nt-1, nx, ny]
+#     else:
+#       raise NotImplementedError
+#   return v_next
 
 # TODO: epsl = 0 for now
 def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
@@ -59,24 +59,38 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   L_val = fns_dict.L_fn(alp, x_arr, t_arr)
   f_plus_val = fns_dict.f_plus_fn(alp, x_arr, t_arr)
   f_minus_val = fns_dict.f_minus_fn(alp, x_arr, t_arr)
-  vec = Dx_right_decreasedim(phi, dx) * f_minus_val + Dx_left_decreasedim(phi, dx) * f_plus_val
-  vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
+  # print('phi: ', phi)
+  # print('f_plus_val: ', f_plus_val)
+  # print('f_minus_val: ', f_minus_val)
+  # print('Dx_right: ', Dx_right_decreasedim(phi, dx, fwd=True))
+  # print('Dx_left: ', Dx_left_decreasedim(phi, dx, fwd=True))
+  # print('Dt: ', Dt_decreasedim(phi, dt))
+  # print('L_val: ', L_val)
+  vec = Dx_right_decreasedim(phi, dx, fwd=True) * f_minus_val + Dx_left_decreasedim(phi, dx, fwd=True) * f_plus_val
+  vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=True)  # [nt-1, nx]
   vec = vec + L_val
+  print('vec: ', vec)
   rho_next = rho_prev - sigma * vec
+  # print('rho_next in update: ', rho_next, flush=True)
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
 def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
   dx = dspatial[0]
-  Dx_phi_left = Dx_left_decreasedim(phi, dx)
-  Dx_phi_right = Dx_right_decreasedim(phi, dx)
-  print('Dx_phi_left', Dx_phi_left.shape)
-  print('Dx_phi_right', Dx_phi_right.shape)
-  print('x_arr', x_arr.shape)
-  print('t_arr', t_arr.shape)
-  print('alp_prev', alp_prev)
-  print('sigma', sigma, flush=True)
-  alp = fns_dict.opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma)
+  # Dx_phi_left = Dx_left_decreasedim(phi, dx)
+  # Dx_phi_right = Dx_right_decreasedim(phi, dx)
+  # alp_update_plus = Dx_phi_left + alp_prev
+  # alp_update_minus = Dx_phi_right + alp_prev
+  # alp_update = jnp.where(alp_prev > 0, alp_update_plus, alp_update_minus)
+  alp = 0* alp_prev + 1
+  # alp = alp_prev - sigma * alp_update
+  # print('Dx_phi_left', Dx_phi_left.shape)
+  # print('Dx_phi_right', Dx_phi_right.shape)
+  # print('x_arr', x_arr.shape)
+  # print('t_arr', t_arr.shape)
+  # print('alp_prev', alp_prev)
+  # print('sigma', sigma, flush=True)
+  # alp = fns_dict.opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma)
   return alp
 
 # def update_rho_2d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
@@ -147,18 +161,18 @@ def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
 #   return v_next
 
 
-@jax.jit
-def update_primal_1d_prev(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fv, epsl):
-  vp_prev, vm_prev = v_prev[0], v_prev[1]
-  dx = dspatial[0]
-  eps = 1e-4
-  mp_prev = (rho_prev + eps) * vp_prev  # [nt-1, nx]
-  mm_prev = (rho_prev + eps) * vm_prev  # [nt-1, nx]
-  delta_phi = Dx_left_increasedim(mp_prev, dx) + Dx_right_increasedim(mm_prev, dx) \
-              + Dt_increasedim(rho_prev,dt) + epsl * Dxx_increasedim(rho_prev,dx) # [nt, nx]
-  delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
-  phi_next = phi_prev - tau * solver.Poisson_eqt_solver(delta_phi, fv, dt)
-  return phi_next
+# @jax.jit
+# def update_primal_1d_prev(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fv, epsl):
+#   vp_prev, vm_prev = v_prev[0], v_prev[1]
+#   dx = dspatial[0]
+#   eps = 1e-4
+#   mp_prev = (rho_prev + eps) * vp_prev  # [nt-1, nx]
+#   mm_prev = (rho_prev + eps) * vm_prev  # [nt-1, nx]
+#   delta_phi = Dx_left_increasedim(mp_prev, dx) + Dx_right_increasedim(mm_prev, dx) \
+#               + Dt_increasedim(rho_prev,dt) + epsl * Dxx_increasedim(rho_prev,dx) # [nt, nx]
+#   delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
+#   phi_next = phi_prev - tau * solver.Poisson_eqt_solver(delta_phi, fv, dt)
+#   return phi_next
 
 @jax.jit
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fv, epsl):
@@ -168,12 +182,17 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
   # TODO!!!!!!!!!!!! change this !!!!!!!!!!!!!!
   fp = jnp.maximum(alp_prev, 0.0)  # [nt-1, nx]
   fm = jnp.minimum(alp_prev, 0.0)  # [nt-1, nx]
-  delta_phi = Dx_left_increasedim(fm, dx) + Dx_right_increasedim(fp, dx) \
-              + epsl * Dxx_increasedim(rho_prev,dx) # [nt, nx]
-  delta_phi = jnp.concatenate([delta_phi[1:,...], delta_phi[:1,...]], axis = 0)  # move zero to the end
+  # print('Dx_left_increasedim(fm, dx): ', Dx_left_increasedim(fm * rho_prev, dx))
+  # print('Dx_right_increasedim(fp, dx): ', Dx_right_increasedim(fp * rho_prev, dx))
+  delta_phi = Dx_left_increasedim(fm * rho_prev, dx, fwd=True) + Dx_right_increasedim(fp * rho_prev, dx, fwd=True) \
+              + epsl * Dxx_increasedim(rho_prev,dx, fwd=True) # [nt, nx]
+  # print('delta_phi: ', delta_phi)
   delta_phi += Dt_increasedim(rho_prev,dt) # [nt, nx]
-  delta_phi = jnp.concatenate([delta_phi[:1,...] - c_on_rho/dt, delta_phi[1:,...]], axis = 0)
-  phi_next = phi_prev - tau * solver.Poisson_eqt_solver_termcond(-delta_phi, fv, dt)
+  # print('Dt: ', Dt_increasedim(rho_prev,dt))
+  delta_phi = jnp.concatenate([delta_phi[:1,...] - c_on_rho/dt, delta_phi[1:-1,...], 0*delta_phi[-1:,...]], axis = 0)
+  # print('delta_phi: ', delta_phi)
+  # phi_next = phi_prev - tau * solver.Poisson_eqt_solver_termcond(delta_phi, fv, dt)
+  phi_next = phi_prev - tau * delta_phi
   return phi_next
 
 # @jax.jit
@@ -197,12 +216,12 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
 @partial(jax.jit, static_argnames=("fns_dict", "ndim"))
 def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim):
   if ndim == 1:
-    if 'opt_alp_fn' in fns_dict._fields:
-      update_v = update_alp
-      update_rho = update_rho_1d
-    else:  # old version as baseline
-      update_v = update_v_1d_prev
-      update_rho = update_rho_1d_prev
+    # if 'opt_alp_fn' in fns_dict._fields:
+    update_v = update_alp
+    update_rho = update_rho_1d
+    # else:  # old version as baseline
+    #   update_v = update_v_1d_prev
+    #   update_rho = update_rho_1d_prev
   # elif ndim == 2:
     # if 'Hxstar_plus_prox_fn' in fns_dict._fields and 'Hxstar_minus_prox_fn' in fns_dict._fields and \
     #    'Hystar_plus_prox_fn' in fns_dict._fields and 'Hystar_minus_prox_fn' in fns_dict._fields:
@@ -224,13 +243,14 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial
 
 
 def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
-                   rho_v_iters=10, eps=1e-7):
+                   rho_v_iters=1, eps=1e-7):
   '''
   @ parameters:
   fns_dict: dict of functions, see the function set_up_example_fns in solver.py
   '''
   for j in range(rho_v_iters):
-    print('v_prev', v_prev, flush=True)
+    # print('v_prev', v_prev, flush=True)
+    # print('rho_prev', v_prev, flush=True)
     rho_next, v_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl,
                                                               x_arr, t_arr, fns_dict, ndim)
     if err < eps:
