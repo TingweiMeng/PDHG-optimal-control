@@ -17,13 +17,14 @@ def main(argv):
   ndim = FLAGS.ndim
   egno = FLAGS.egno
   ifsave = FLAGS.ifsave
-  stepsz_param = FLAGS.stepsz_param
   c_on_rho = FLAGS.c_on_rho
   epsl = FLAGS.epsl
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   eps = FLAGS.eps
   T = FLAGS.T
   fwd = FLAGS.fwd
+  sigma_hj = FLAGS.pdhg_step_hj
+  sigma_cont = FLAGS.pdhg_step_cont
 
   print('nx: ', nx)
   print('ny: ', ny)
@@ -90,7 +91,7 @@ def main(argv):
   results = PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                    epsl = epsl, stepsz_param=stepsz_param, fwd = fwd)
+                    epsl = epsl, fwd = fwd, sigma_hj = sigma_hj, sigma_cont = sigma_cont)
   if ifsave:
     save(save_dir, filename_prefix, results)
   print('phi: ', results[0][-1])
@@ -107,7 +108,6 @@ if __name__ == '__main__':
   flags.DEFINE_integer('ndim', 1, 'spatial dimension')
   flags.DEFINE_integer('egno', 1, 'index of example')
   flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
-  flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('T', 1.0, 'final time')
@@ -117,5 +117,9 @@ if __name__ == '__main__':
 
   flags.DEFINE_integer('method', 1, '0 for previous version, 1 for new version')
   flags.DEFINE_boolean('fwd', False, 'implicit or explicit in HJ')
+  flags.DEFINE_boolean('hj_precond', False, 'preconditioning for HJ')
+  flags.DEFINE_boolean('cont_precond', False, 'preconditioning for continuity')
+  flags.DEFINE_float('pdhg_step_hj', 0.9, 'step size for HJ')
+  flags.DEFINE_float('pdhg_step_cont', 0.9, 'step size for continuity')
 
   app.run(main)

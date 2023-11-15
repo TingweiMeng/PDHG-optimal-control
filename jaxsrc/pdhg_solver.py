@@ -263,7 +263,7 @@ def Dyy_increasedim(rho, dy, fwd = False):
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
                    dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, fwd, epsl = 0.0,
-                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9):
+                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, sigma_hj=0.9, sigma_cont=0.9):
   '''
   @ parameters:
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
@@ -291,10 +291,8 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
   rho_prev = rho0
   v_prev = v0
 
-  # scale = 1.5
-  scale = 1.0
-  tau_phi = stepsz_param / scale
-  tau_rho = stepsz_param * scale
+  tau_phi = sigma_hj
+  tau_rho = sigma_cont
   print('tau_phi: ', tau_phi, 'tau_rho: ', tau_rho)
   
   # fft for preconditioning
@@ -460,7 +458,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
 def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                    epsl = 0.0, stepsz_param=0.9, fwd=False):
+                    epsl = 0.0, fwd=False, sigma_hj=0.9, sigma_cont=0.9):
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
@@ -506,7 +504,7 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
       results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
                                     dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                                    epsl = epsl, stepsz_param=stepsz_param, fwd = fwd)
+                                    epsl = epsl, fwd = fwd, sigma_hj=sigma_hj, sigma_cont=sigma_cont)
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:
           stepsz_param -= stepsz_param_delta
