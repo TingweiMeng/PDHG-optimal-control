@@ -26,7 +26,7 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   vec = Dx_right_decreasedim(phi, dx, fwd=fwd) * f_minus_val + Dx_left_decreasedim(phi, dx, fwd=fwd) * f_plus_val
   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=fwd)  # [nt-1, nx]
   vec = vec + L_val
-  print('vec: ', vec)
+  # print('vec: ', vec)
   if precond:
     rho_next = rho_prev - sigma * solver.Poisson_eqt_solver_termcond(vec, fv, dt)
   else:
@@ -49,7 +49,7 @@ def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
   alp = fns_dict.opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma)
   return alp
 
-@partial(jax.jit, static_argnames=("fns_dict", ))
+# @partial(jax.jit, static_argnames=("fns_dict", "fwd",))
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fv, epsl, fwd, precond, fns_dict, x_arr, t_arr):
   dx = dspatial[0]
   eps = 1e-4
@@ -70,7 +70,7 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
     phi_next = phi_prev - tau * delta_phi
   return phi_next
 
-@partial(jax.jit, static_argnames=("fns_dict", "ndim"))
+# @partial(jax.jit, static_argnames=("fns_dict", "ndim", "fwd", ))
 def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, 
                         fns_dict, ndim, fwd, precond, fv):
   if ndim == 1:

@@ -342,11 +342,11 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     
     error = jnp.array([err1, err2, err3])
     error_all.append(error)
-    if i % 10000 == 0:
+    if i % 100 == 0:
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}'.format(i,err1, err2, err3), flush = True)
-      print('rho_next: ', rho_next)
-      print('phi_next: ', phi_next)
-      print('v_next: ', v_next)
+      # print('rho_next: ', rho_next)
+      # print('phi_next: ', phi_next)
+      # print('v_next: ', v_next)
 
     if error[2] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
