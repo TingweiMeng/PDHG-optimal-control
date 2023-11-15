@@ -27,7 +27,7 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=fwd)  # [nt-1, nx]
   vec = vec + L_val
   # print('vec: ', vec)
-  if precond:
+  if precond and rho_prev.shape[0] > 1:
     rho_next = rho_prev - sigma * solver.Poisson_eqt_solver_termcond(vec, fv, dt)
   else:
     rho_next = rho_prev - sigma * vec
