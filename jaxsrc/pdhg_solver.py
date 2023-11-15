@@ -404,6 +404,7 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
   T = dt * (nt-1)
 
   utils.timer.tic('all_time')
+  num_iters = 0
   for i in range(nt_PDHG):
     utils.timer.tic('pdhg_iter{}'.format(i))
     print('=================== nt_PDHG = {}, i = {} ==================='.format(nt_PDHG, i), flush=True)
@@ -430,9 +431,11 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
       else:
         max_err = jnp.maximum(max_err, errs[-1][-1])
         break
-    _, v_curr, rho_curr, phi_curr = results_all[-1]
+    num_iter_curr, v_curr, rho_curr, phi_curr = results_all[-1]
     utils.timer.toc('pdhg_iter{}'.format(i))
     utils.timer.toc('all_time')
+    # max of num_iter_curr
+    num_iters = jnp.maximum(num_iters, num_iter_curr)
 
     if i > 0:
       phi_all.append(phi_curr[:-1,:])
@@ -462,5 +465,5 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
   if sol_nan:
     print('pdhg does not conv, please decrease sigma_hj and sigma_cont to be less than {:.2E} and {:.2E}'.format(sigma_hj_min, sigma_cont_min), flush = True)
   else:
-    print('pdhg conv. Max err is {:.2E}'.format(max_err), flush = True)
+    print('pdhg conv. Max err is {:.2E}, max num_iters is {}'.format(max_err, num_iters), flush = True)
   return results_out
