@@ -139,12 +139,12 @@ def set_up_example_fns(egno, ndim, period_spatial):
   # Hstar_plus_fn, Hstar_minus_fn, Hstar_fn are only used in pdhg_v.py
   # Hstar_plus_prox_fn, Hstar_minus_prox_fn Hstar_prox_fn (or H_prox_fn) are only used in pdhg_v.py
   if egno == 1:  # c(x,t)|p|^2/2 + f(x,t)
-    H_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p,0) ** 2/2
-    H_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p,0) ** 2/2
-    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/2
-    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/2
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param), 0.0)
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param), 0.0)
+    H_plus_fn = lambda p, x_arr, t_arr: -jnp.minimum(p,0) ** 2/2
+    H_minus_fn = lambda p, x_arr, t_arr: -jnp.maximum(p,0) ** 2/2
+    # Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/2
+    # Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/2
+    # Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param), 0.0)
+    # Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param), 0.0)
     L_fn = lambda alp, x, t: alp ** 2 / 2
     f_plus_fn = lambda alp, x, t: jnp.maximum(alp, 0.0)
     f_minus_fn = lambda alp, x, t: jnp.minimum(alp, 0.0)
@@ -161,36 +161,40 @@ def set_up_example_fns(egno, ndim, period_spatial):
       alp_update = jnp.where(alp_prev > 0, alp_update_plus, alp_update_minus)
       return alp_prev - sigma * alp_update
     Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
-                                        'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'L_fn', 'opt_alp_fn',
+                                        'H_plus_fn', 'H_minus_fn', 
+                                        # 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                        # 'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 
+                                        'L_fn', 'opt_alp_fn',
                                         'f_plus_fn', 'f_minus_fn'])
     fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
                         H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
-                        Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
-                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
+                        # Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                        # Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
                         L_fn=L_fn, opt_alp_fn=opt_alp_fn,
                         f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn)
       
   elif egno == 2: # f(v) = v, L = indicator of 1
     H_plus_fn = lambda p, x_arr, t_arr: p
     H_minus_fn = lambda p, x_arr, t_arr: 0 * p
-    Hstar_plus_fn = lambda p, x_arr, t_arr: 0 * p
-    Hstar_minus_fn = lambda p, x_arr, t_arr: 0 * p
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0 * p + 1
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0 * p
+    # Hstar_plus_fn = lambda p, x_arr, t_arr: 0 * p
+    # Hstar_minus_fn = lambda p, x_arr, t_arr: 0 * p
+    # Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: 0 * p + 1
+    # Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: 0 * p
     L_fn = lambda alp, x, t: 0 * alp
     f_plus_fn = lambda alp, x, t: alp
     f_minus_fn = lambda alp, x, t: 0 * alp 
     def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma):
       return 0 * alp_prev + 1
     Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
-                                        'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'L_fn', 'opt_alp_fn',
+                                        'H_plus_fn', 'H_minus_fn', 
+                                        # 'Hstar_plus_fn', 'Hstar_minus_fn',
+                                        # 'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 
+                                        'L_fn', 'opt_alp_fn',
                                         'f_plus_fn', 'f_minus_fn'])
     fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
                         H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
-                        Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
-                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
+                        # Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
+                        # Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
                         L_fn=L_fn, opt_alp_fn=opt_alp_fn,
                         f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn)
   else:
