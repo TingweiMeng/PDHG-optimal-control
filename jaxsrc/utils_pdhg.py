@@ -87,7 +87,7 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial
 
 
 def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, fwd, fv,
-                   rho_v_iters=1, eps=1e-7, precond=False):
+                   rho_v_iters=10, eps=1e-7, precond=False):
   '''
   @ parameters:
   fns_dict: dict of functions, see the function set_up_example_fns in solver.py

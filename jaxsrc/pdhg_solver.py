@@ -347,8 +347,13 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
       # print('rho_next: ', rho_next)
       # print('phi_next: ', phi_next)
       # print('v_next: ', v_next)
+      print('err phi: ', jnp.linalg.norm(phi_next - phi_prev))
+      print('err rho: ', jnp.linalg.norm(rho_next - rho_prev))
+      print('err v: ', jnp.linalg.norm(v_next - v_prev))
 
-    if error[2] < eps:
+    stopping_criteria_hj = jnp.linalg.norm(phi_next - phi_prev) / tau_phi
+    stopping_criteria_cont = jnp.linalg.norm(rho_next - rho_prev) / tau_rho
+    if stopping_criteria_hj < eps and stopping_criteria_cont < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
