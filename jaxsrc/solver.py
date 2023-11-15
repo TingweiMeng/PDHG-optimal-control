@@ -127,7 +127,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
   
   if egno == 1 or egno == 2:
     # J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
-    J = lambda x: jnp.sin(alpha * x)
+    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   else:

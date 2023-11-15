@@ -51,7 +51,7 @@ def main(argv):
   else:
     period_spatial = [x_period, y_period]
   
-  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial, baseline = False)
+  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial)
   
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
