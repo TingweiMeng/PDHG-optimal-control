@@ -262,7 +262,7 @@ def Dyy_increasedim(rho, dy, fwd = False):
   return out
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
-                   dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, epsl = 0.0,
+                   dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, fwd, epsl = 0.0,
                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9):
   '''
   @ parameters:
@@ -283,6 +283,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     print_gap: int, gap for printing and saving results
     eps: scalar, stopping criterion
     stepsz_param: scalar, step size parameter
+    fwd: whether use implicit or explicit scheme for HJ
   @ returns:
   '''
   phi_prev = phi0
@@ -317,8 +318,8 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
 
   for i in range(N_maxiter):
     rho_next, v_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, v_prev, tau_rho, dt, dspatial, epsl, 
-                                      fns_dict, x_arr, t_arr, ndim)
-    phi_next = fn_update_primal(phi_prev, rho_next, c_on_rho, v_next, tau_phi, dt, dspatial, fv, epsl)
+                                      fns_dict, x_arr, t_arr, ndim, fwd=fwd)
+    phi_next = fn_update_primal(phi_prev, rho_next, c_on_rho, v_next, tau_phi, dt, dspatial, fv, epsl, fwd=fwd)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
 
@@ -334,9 +335,9 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
       err2 += jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0)
     # err3: equation error
     if ndim == 1:
-      HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr, fwd = True)
+      HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr, fwd = fwd)
     elif ndim == 2:
-      HJ_residual = compute_HJ_residual_EO_2d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+      HJ_residual = compute_HJ_residual_EO_2d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr, fwd = fwd)
     err3 = jnp.mean(jnp.abs(HJ_residual))
     
     error = jnp.array([err1, err2, err3])
@@ -459,7 +460,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
 def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                    epsl = 0.0, stepsz_param=0.9):
+                    epsl = 0.0, stepsz_param=0.9, fwd=False):
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
@@ -505,7 +506,7 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
       results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
                                     dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                                    epsl = epsl, stepsz_param=stepsz_param)
+                                    epsl = epsl, stepsz_param=stepsz_param, fwd = fwd)
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:
           stepsz_param -= stepsz_param_delta

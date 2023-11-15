@@ -23,6 +23,7 @@ def main(argv):
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   eps = FLAGS.eps
   T = FLAGS.T
+  fwd = FLAGS.fwd
 
   print('nx: ', nx)
   print('ny: ', ny)
@@ -89,7 +90,7 @@ def main(argv):
   results = PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                    epsl = epsl, stepsz_param=stepsz_param)
+                    epsl = epsl, stepsz_param=stepsz_param, fwd = fwd)
   if ifsave:
     save(save_dir, filename_prefix, results)
   print('phi: ', results[0][-1])
@@ -115,5 +116,6 @@ if __name__ == '__main__':
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
 
   flags.DEFINE_integer('method', 1, '0 for previous version, 1 for new version')
+  flags.DEFINE_boolean('fwd', False, 'implicit or explicit in HJ')
 
   app.run(main)

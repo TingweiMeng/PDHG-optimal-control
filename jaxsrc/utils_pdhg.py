@@ -54,7 +54,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 #   return v_next
 
 # TODO: epsl = 0 for now
-def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
+def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd):
   dx = dspatial[0]
   L_val = fns_dict.L_fn(alp, x_arr, t_arr)
   f_plus_val = fns_dict.f_plus_fn(alp, x_arr, t_arr)
@@ -62,12 +62,12 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   # print('phi: ', phi)
   # print('f_plus_val: ', f_plus_val)
   # print('f_minus_val: ', f_minus_val)
-  # print('Dx_right: ', Dx_right_decreasedim(phi, dx, fwd=True))
-  # print('Dx_left: ', Dx_left_decreasedim(phi, dx, fwd=True))
+  # print('Dx_right: ', Dx_right_decreasedim(phi, dx, fwd=fwd))
+  # print('Dx_left: ', Dx_left_decreasedim(phi, dx, fwd=fwd))
   # print('Dt: ', Dt_decreasedim(phi, dt))
   # print('L_val: ', L_val)
-  vec = Dx_right_decreasedim(phi, dx, fwd=True) * f_minus_val + Dx_left_decreasedim(phi, dx, fwd=True) * f_plus_val
-  vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=True)  # [nt-1, nx]
+  vec = Dx_right_decreasedim(phi, dx, fwd=fwd) * f_minus_val + Dx_left_decreasedim(phi, dx, fwd=fwd) * f_plus_val
+  vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=fwd)  # [nt-1, nx]
   vec = vec + L_val
   print('vec: ', vec)
   rho_next = rho_prev - sigma * vec
@@ -77,13 +77,13 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
 
 def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
   dx = dspatial[0]
-  # Dx_phi_left = Dx_left_decreasedim(phi, dx)
-  # Dx_phi_right = Dx_right_decreasedim(phi, dx)
-  # alp_update_plus = Dx_phi_left + alp_prev
-  # alp_update_minus = Dx_phi_right + alp_prev
-  # alp_update = jnp.where(alp_prev > 0, alp_update_plus, alp_update_minus)
-  alp = 0* alp_prev + 1
-  # alp = alp_prev - sigma * alp_update
+  Dx_phi_left = Dx_left_decreasedim(phi, dx)
+  Dx_phi_right = Dx_right_decreasedim(phi, dx)
+  alp_update_plus = Dx_phi_left + alp_prev
+  alp_update_minus = Dx_phi_right + alp_prev
+  alp_update = jnp.where(alp_prev > 0, alp_update_plus, alp_update_minus)
+  # alp = 0* alp_prev + 1
+  alp = alp_prev - sigma * alp_update
   # print('Dx_phi_left', Dx_phi_left.shape)
   # print('Dx_phi_right', Dx_phi_right.shape)
   # print('x_arr', x_arr.shape)
@@ -175,7 +175,7 @@ def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
 #   return phi_next
 
 @jax.jit
-def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fv, epsl):
+def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fv, epsl, fwd):
   dx = dspatial[0]
   eps = 1e-4
   # for now, take f(alp) = alp 
@@ -184,8 +184,8 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
   fm = jnp.minimum(alp_prev, 0.0)  # [nt-1, nx]
   # print('Dx_left_increasedim(fm, dx): ', Dx_left_increasedim(fm * rho_prev, dx))
   # print('Dx_right_increasedim(fp, dx): ', Dx_right_increasedim(fp * rho_prev, dx))
-  delta_phi = Dx_left_increasedim(fm * rho_prev, dx, fwd=True) + Dx_right_increasedim(fp * rho_prev, dx, fwd=True) \
-              + epsl * Dxx_increasedim(rho_prev,dx, fwd=True) # [nt, nx]
+  delta_phi = Dx_left_increasedim(fm * rho_prev, dx, fwd=fwd) + Dx_right_increasedim(fp * rho_prev, dx, fwd=fwd) \
+              + epsl * Dxx_increasedim(rho_prev,dx, fwd=fwd) # [nt, nx]
   # print('delta_phi: ', delta_phi)
   delta_phi += Dt_increasedim(rho_prev,dt) # [nt, nx]
   # print('Dt: ', Dt_increasedim(rho_prev,dt))
@@ -214,7 +214,7 @@ def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
 
 
 @partial(jax.jit, static_argnames=("fns_dict", "ndim"))
-def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim):
+def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim, fwd):
   if ndim == 1:
     # if 'opt_alp_fn' in fns_dict._fields:
     update_v = update_alp
@@ -235,14 +235,14 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial
   else:
     raise NotImplementedError
   v_next = update_v(v_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr)
-  rho_next = update_rho(rho_prev, phi_bar, v_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr)
+  rho_next = update_rho(rho_prev, phi_bar, v_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, fwd)
   err = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
   for v0, v1 in zip(v_prev, v_next):
     err = jnp.maximum(err, jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0))
   return rho_next, v_next, err
 
 
-def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
+def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, fwd, 
                    rho_v_iters=1, eps=1e-7):
   '''
   @ parameters:
@@ -252,7 +252,7 @@ def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, 
     # print('v_prev', v_prev, flush=True)
     # print('rho_prev', v_prev, flush=True)
     rho_next, v_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl,
-                                                              x_arr, t_arr, fns_dict, ndim)
+                                                              x_arr, t_arr, fns_dict, ndim, fwd)
     if err < eps:
       break
     rho_prev = rho_next
