@@ -81,7 +81,8 @@ def main(argv):
   results = PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                    epsl = epsl, fwd = fwd, sigma_hj = sigma_hj, sigma_cont = sigma_cont)
+                    epsl = epsl, fwd = fwd, sigma_hj = sigma_hj, sigma_cont = sigma_cont,
+                    hj_precond = FLAGS.hj_precond, cont_precond = FLAGS.cont_precond)
   if ifsave:
     save(save_dir, filename_prefix, results)
   print('phi: ', results[0][-1])
