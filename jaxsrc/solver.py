@@ -144,11 +144,13 @@ def set_up_example_fns(egno, ndim, period_spatial):
     L_fn = lambda alp, x, t: alp ** 2 / 2
     f_plus_fn = lambda alp, x, t: jnp.maximum(alp, 0.0)
     f_minus_fn = lambda alp, x, t: jnp.minimum(alp, 0.0)
-    def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma):
-      can1 = (alp_prev - sigma * Dx_phi_left) / (1 + sigma)
+    def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma, rho):
+      # can1 = (alp_prev - sigma * Dx_phi_left) / (1 + sigma)
+      can1 = (alp_prev * rho - sigma * Dx_phi_left) / (rho + sigma)
       can1 = jnp.maximum(can1, 0.0)
       fn_val1 = can1 * Dx_phi_left + L_fn(can1, x_arr, t_arr) + (can1 - alp_prev) ** 2 / (2* sigma)
-      can2 = (alp_prev - sigma * Dx_phi_right) / (1 + sigma)
+      # can2 = (alp_prev - sigma * Dx_phi_right) / (1 + sigma)
+      can2 = (alp_prev * rho - sigma * Dx_phi_right) / (rho + sigma)
       can2 = jnp.minimum(can2, 0.0)
       fn_val2 = can2 * Dx_phi_right + L_fn(can2, x_arr, t_arr) + (can2 - alp_prev) ** 2 / (2* sigma)
       alp = jnp.where(fn_val1 < fn_val2, can1, can2)
@@ -160,16 +162,18 @@ def set_up_example_fns(egno, ndim, period_spatial):
     L_fn = lambda alp, x, t: 0 * alp
     f_plus_fn = lambda alp, x, t: alp
     f_minus_fn = lambda alp, x, t: 0 * alp 
-    def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma):
+    def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma, rho):
       return 0 * alp_prev + 1
   elif egno == 3: # f = alp, L = p^2/2 + ind{p>=0}
     H_plus_fn = lambda p, x_arr, t_arr: 0 * p
     H_minus_fn = lambda p, x_arr, t_arr: -jnp.maximum(p,0) ** 2/2
-    L_fn = lambda alp, x, t: alp ** 2 / 2
+    L_fn = lambda alp, x, t: jnp.maximum(alp,0) ** 2 / 2
+    # L_fn = lambda alp, x, t: alp ** 2 / 2
     f_plus_fn = lambda alp, x, t: jnp.maximum(alp, 0.0)
     f_minus_fn = lambda alp, x, t: jnp.minimum(alp, 0.0)
-    def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma):
-      can1 = (alp_prev - sigma * Dx_phi_left) / (1 + sigma)
+    def opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma, rho):
+      # can1 = (alp_prev - sigma * Dx_phi_left) / (1 + sigma)
+      can1 = (alp_prev * rho - sigma * Dx_phi_left) / (rho + sigma)
       alp = jnp.maximum(can1, 0.0)
       return alp
   else:

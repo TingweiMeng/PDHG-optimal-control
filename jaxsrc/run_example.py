@@ -5,12 +5,16 @@ import pytz
 from datetime import datetime
 from pdhg_solver import PDHG_multi_step_inverse
 from solver import save
-import utils_pdhg
+
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
     print(value.name, ": ", value._value, flush=True)
 
+  if FLAGS.oldver:
+    import utils_pdhg_old as utils_pdhg
+  else:
+    import utils_pdhg
   nt = FLAGS.nt
   nx = FLAGS.nx
   ny = FLAGS.ny
@@ -82,7 +86,8 @@ def main(argv):
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, fwd = fwd, sigma_hj = sigma_hj, sigma_cont = sigma_cont,
-                    precond_hj = FLAGS.hj_precond, precond_cont = FLAGS.cont_precond)
+                    precond_hj = FLAGS.hj_precond, precond_cont = FLAGS.cont_precond,
+                    old_ver=FLAGS.oldver)
   if ifsave:
     save(save_dir, filename_prefix, results)
   print('phi: ', results[0][-1])
@@ -112,4 +117,5 @@ if __name__ == '__main__':
   flags.DEFINE_float('pdhg_step_hj', 0.9, 'step size for HJ')
   flags.DEFINE_float('pdhg_step_cont', 0.9, 'step size for continuity')
 
+  flags.DEFINE_boolean('oldver', False, 'use code similar from the last paper')
   app.run(main)

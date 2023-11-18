@@ -6,266 +6,11 @@ from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_
 from functools import partial
 import matplotlib.pyplot as plt
 
-@partial(jax.jit, static_argnums=(2,))
-def Dx_right_decreasedim(phi, dx, fwd = False):
-  '''F phi = (phi_{k+1,i+1}-phi_{k+1,i})/dx
-  phi_{k+1,i+1} is periodic in i+1. Can be also used for 2d spatial domain
-  @ parameters:
-    phi: [nt, nx] or [nt, nx, ny]
-  @ return
-    out: [nt-1, nx] or [nt-1, nx, ny]
-  '''
-  phi_ip1 = jnp.roll(phi, -1, axis=1)
-  out = phi_ip1 - phi
-  if fwd:
-    out = out[:-1,...]/dx
-  else:
-    out = out[1:,...]/dx
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dx_right_increasedim(m, dx, fwd = False):
-  '''F m = (-m[k-1,i] + m[k-1,i+1])/dx
-  m[k,i+1] is periodic in i+1
-  postpend 0 in axis-0 if fwd = True
-  prepend 0 in axis-0 if fwd = False
-  @ parameters:
-    m: [nt-1, nx] or [nt-1, nx, ny]
-  @ return
-    out: [nt, nx] or [nt, nx, ny]
-  '''
-  m_ip1 = jnp.roll(m, -1, axis=1)
-  out = -m + m_ip1
-  out = out/dx
-  if fwd: 
-    out = jnp.concatenate([out, jnp.zeros_like(out[0:1,...])], axis = 0)
-  else:
-    out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dx_left_decreasedim(phi, dx, fwd = False):
-  '''F phi = (phi_{k+1,i}-phi_{k+1,i-1})/dx
-  phi_{k+1,i-1} is periodic in i+1
-  @ parameters:
-    phi: [nt, nx] or [nt, nx, ny]
-  @ return
-    out: [nt-1, nx] or [nt-1, nx, ny]
-  '''
-  phi_im1 = jnp.roll(phi, 1, axis=1)
-  out = phi - phi_im1
-  if fwd:
-    out = out[:-1,...]/dx
-  else:
-    out = out[1:,...]/dx
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dx_left_increasedim(m, dx, fwd = False):
-  '''F m = (-m[k,i-1] + m[k,i])/dx
-  m[k,i-1] is periodic in i-1
-  postpend 0 in axis-0 if fwd = True
-  prepend 0 in axis-0 if fwd = False
-  @ parameters:
-    m: [nt-1, nx] or [nt-1, nx, ny]
-  @ return
-    out: [nt, nx] or [nt, nx, ny]
-  '''
-  m_im1 = jnp.roll(m, 1, axis=1)
-  out = -m_im1 + m
-  out = out/dx
-  if fwd: 
-    out = jnp.concatenate([out, jnp.zeros_like(out[0:1,...])], axis = 0) #postpend 0
-  else:
-    out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
-  return out
-
-
-@partial(jax.jit, static_argnums=(2,))
-def Dy_right_decreasedim(phi, dy, fwd = False):
-  '''F phi = (phi_{k+1,:,i+1}-phi_{k+1,:,i})/dy
-  phi_{k+1,:,i+1} is periodic in i+1.
-  @ parameters:
-    phi: [nt, nx, ny]
-  @ return
-    out: [nt-1, nx, ny]
-  '''
-  phi_ip1 = jnp.roll(phi, -1, axis=2)
-  out = phi_ip1 - phi
-  if fwd:
-    out = out[:-1,...]/dy
-  else:
-    out = out[1:,...]/dy
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dy_right_increasedim(m, dy, fwd = False):
-  '''F m = (-m[k-1,:,i] + m[k-1,:,i+1])/dy
-  m[k,:,i+1] is periodic in i+1
-  postpend 0 in axis-0 if fwd = True
-  prepend 0 in axis-0 if fwd = False
-  @ parameters:
-    m: [nt-1, nx, ny]
-  @ return
-    out: [nt, nx, ny]
-  '''
-  m_ip1 = jnp.roll(m, -1, axis=2)
-  out = -m + m_ip1
-  out = out/dy
-  if fwd:
-    out = jnp.concatenate([out, jnp.zeros_like(out[0:1,...])], axis = 0)
-  else:
-    out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dy_left_decreasedim(phi, dy, fwd = False):
-  '''F phi = (phi_{k+1,:,i}-phi_{k+1,:,i-1})/dy
-  phi_{k+1,:,i-1} is periodic in i+1
-  @ parameters:
-    phi: [nt, nx, ny]
-  @ return
-    out: [nt-1, nx, ny]
-  '''
-  phi_im1 = jnp.roll(phi, 1, axis=2)
-  out = phi - phi_im1
-  if fwd:
-    out = out[:-1,...]/dy
-  else:
-    out = out[1:,...]/dy
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dy_left_increasedim(m, dy, fwd = False):
-  '''F m = (-m[k,:,i-1] + m[k,:,i])/dy
-  m[k,:,i-1] is periodic in i-1
-  postpend 0 in axis-0 if fwd = True
-  prepend 0 in axis-0 if fwd = False
-  @ parameters:
-    m: [nt-1, nx, ny]
-  @ return
-    out: [nt, nx, ny]
-  '''
-  m_im1 = jnp.roll(m, 1, axis=2)
-  out = -m_im1 + m
-  out = out/dy
-  if fwd:
-    out = jnp.concatenate([out, jnp.zeros_like(out[0:1,...])], axis = 0)
-  else:
-    out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
-  return out
-
-
-@jax.jit
-def Dt_decreasedim(phi, dt):
-  '''Dt phi = (phi_{k+1,...}-phi_{k,...})/dt
-  phi_{k+1,...} is not periodic
-  @ parameters:
-    phi: [nt, nx] or [nt, nx, ny]
-  @ return
-    out: [nt-1, nx] or [nt-1, nx, ny]
-  '''
-  phi_kp1 = phi[1:,...]
-  phi_k = phi[:-1,...]
-  out = (phi_kp1 - phi_k) /dt
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dxx_decreasedim(phi, dx, fwd = False):
-  '''Dxx phi = (phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
-  phi_{k+1,i} is periodic in i, but not in k
-  @ parameters:
-    phi: [nt, nx] or [nt, nx, ny]
-  @ return
-    out: [nt-1, nx] or [nt-1, nx, ny]
-  '''
-  if fwd:
-    phi_kp1 = phi[:-1,...]
-  else:
-    phi_kp1 = phi[1:,:]
-  phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
-  phi_im1 = jnp.roll(phi_kp1, 1, axis=1)
-  out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dx**2
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dyy_decreasedim(phi, dy, fwd = False):
-  '''Dxx phi = (phi_{k+1,:,i+1}+phi_{k+1,:,i-1}-2*phi_{k+1,:,i})/dy^2
-  phi_{k+1,:,i} is periodic in i, but not in k
-  @ parameters:
-    phi: [nt, nx, ny]
-  @ return
-    out: [nt-1, nx, ny]
-  '''
-  if fwd:
-    phi_kp1 = phi[:-1,...]
-  else:
-    phi_kp1 = phi[1:,...]
-  phi_ip1 = jnp.roll(phi_kp1, -1, axis=2)
-  phi_im1 = jnp.roll(phi_kp1, 1, axis=2)
-  out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dy**2
-  return out
-
-
-@jax.jit
-def Dt_increasedim(rho, dt):
-  '''Dt rho = (-rho[k-1,...] + rho[k,...])/dt
-            #k = 0...(nt-1)
-  rho[-1,:] = 0
-  @ parameters:
-    rho: [nt-1, nx] or [nt-1, nx, ny]
-  @ return
-    out: [nt, nx] or [nt, nx, ny]
-  '''
-  rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
-  rho_k = jnp.concatenate([rho, jnp.zeros_like(rho[0:1,...])], axis = 0) #append 0
-  out = (-rho_km1 + rho_k)/dt
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dxx_increasedim(rho, dx, fwd = False):
-  '''F rho = (rho[k-1,i+1]+rho[k-1,i-1]-2*rho[k-1,i])/dx^2
-            #k = 0...(nt-1)
-  prepend 0 in axis-0 if fwd = False
-  postpend 0 in axis-0 if fwd = True
-  @ parameters:
-    rho: [nt-1, nx] or [nt-1, nx, ny]
-  @ return
-    out: [nt, nx] or [nt, nx, ny]
-  '''
-  if fwd:
-    rho_km1 = jnp.concatenate([rho, jnp.zeros_like(rho[0:1,...])], axis = 0) #append 0
-  else:
-    rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
-  rho_im1 = jnp.roll(rho_km1, 1, axis=1)
-  rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
-  out = (rho_ip1 + rho_im1 - 2*rho_km1) /dx**2
-  return out
-
-@partial(jax.jit, static_argnums=(2,))
-def Dyy_increasedim(rho, dy, fwd = False):
-  '''F rho = (rho[k-1,:,i+1]+rho[k-1,:,i-1]-2*rho[k-1,:,i])/dy^2
-            #k = 0...(nt-1)
-  prepend 0 in axis-0 if fwd = False
-  postpend 0 in axis-0 if fwd = True
-  @ parameters:
-    rho: [nt-1, nx, ny]
-  @ return
-    out: [nt, nx, ny]
-  '''
-  if fwd:
-    rho_km1 = jnp.concatenate([rho, jnp.zeros_like(rho[0:1,...])], axis = 0) #append 0
-  else:
-    rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
-  rho_im1 = jnp.roll(rho_km1, 1, axis=2)
-  rho_ip1 = jnp.roll(rho_km1, -1, axis=2)
-  out = (rho_ip1 + rho_im1 - 2*rho_km1) /dy**2
-  return out
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0, 
                    dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, fwd, epsl = 0.0,
                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, sigma_hj=0.9, sigma_cont=0.9,
-                   precond_hj = False, precond_cont = False):
+                   precond_hj = False, precond_cont = False, old_ver=False):
   '''
   @ parameters:
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
@@ -288,6 +33,13 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     fwd: whether use implicit or explicit scheme for HJ
   @ returns:
   '''
+  if old_ver:
+    from utils_pdhg_old import HJ_residual as HJ_residual_fn
+    from utils_pdhg_old import cont_residual as cont_residual_fn
+  else:
+    from utils_pdhg import HJ_residual as HJ_residual_fn
+    from utils_pdhg import cont_residual as cont_residual_fn
+
   phi_prev = phi0
   phi_bar = phi0
   rho_prev = rho0
@@ -343,8 +95,10 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     
     error = jnp.array([err1, err2, err3])
     error_all.append(error)
-    stopping_criteria_hj = jnp.linalg.norm(phi_next - phi_prev) / tau_phi
-    stopping_criteria_cont = jnp.linalg.norm(rho_next - rho_prev) / tau_rho
+    HJ_residual_pdhg = HJ_residual_fn(phi_next, v_next, dspatial, dt, epsl, fns_dict, x_arr, t_arr, fwd)
+    cont_residual_pdhg = cont_residual_fn(rho_next, v_next, dspatial, dt, epsl, fns_dict, x_arr, t_arr, fwd, c_on_rho)
+    stopping_criteria_hj = jnp.linalg.norm(HJ_residual_pdhg)
+    stopping_criteria_cont = jnp.linalg.norm(cont_residual_pdhg)
 
     if i % 100 == 0:
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}'.format(i,err1, err2, err3), flush = True)
@@ -382,7 +136,15 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
                     epsl = 0.0, fwd=False, sigma_hj=0.9, sigma_cont=0.9,
-                    precond_hj=False, precond_cont=False):
+                    precond_hj=False, precond_cont=False,
+                    old_ver=False):
+  if old_ver:
+    from utils_pdhg_old import HJ_residual as HJ_residual_fn
+    from utils_pdhg_old import cont_residual as cont_residual_fn
+  else:
+    from utils_pdhg import HJ_residual as HJ_residual_fn
+    from utils_pdhg import cont_residual as cont_residual_fn
+
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
@@ -424,7 +186,8 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
                                     dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                                     epsl = epsl, fwd = fwd, sigma_hj=sigma_hj, sigma_cont=sigma_cont,
-                                    precond_hj = precond_hj, precond_cont = precond_cont)
+                                    precond_hj = precond_hj, precond_cont = precond_cont, 
+                                    old_ver=old_ver)
       if jnp.any(jnp.isnan(errs)):
         if sigma_hj > sigma_hj_min + sigma_hj_delta and sigma_cont > sigma_cont_min + sigma_cont_delta:
           sigma_hj -= sigma_hj_delta
@@ -477,13 +240,13 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
     print('pdhg conv. Max err is {:.2E}, max num_iters is {}'.format(max_err, num_iters), flush = True)
 
   # plot solution 
-  fig = plt.figure()
   phi_trans = einshape('ij->ji', phi_out)  # [nx, nt]
   phi_trans = jnp.concatenate([phi_trans, phi_trans[:1,:]], axis = 0)  # [nx+1, nt]
   dim1, dim2 = phi_trans.shape
   x_arr = jnp.linspace(0.0, 2.0, num = nx + 1, endpoint = True)
   t_arr = jnp.linspace(0.0, T, num = nt, endpoint = True)
   t_mesh, x_mesh = jnp.meshgrid(t_arr, x_arr)
+  fig = plt.figure()
   plt.contourf(x_mesh[:dim1, :dim2], t_mesh[:dim1, :dim2], phi_trans)
   plt.colorbar()
   plt.xlabel('x')
@@ -491,20 +254,51 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
   plt.savefig('./fig_solution.png')
   plt.close()
 
-  HJ_residual = compute_HJ_residual_EO_1d_general(phi_out, dt, dspatial, fns_dict, epsl, x_arr, t_arr, fwd = fwd)
+  rho_trans = einshape('ij->ji', rho_out)  # [nx, nt-1]
+  rho_trans = jnp.concatenate([rho_trans, rho_trans[:1,:]], axis = 0)  # [nx+1, nt-1]
+  dim1, dim2 = rho_trans.shape
+  fig = plt.figure()
+  plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], rho_trans)
+  plt.colorbar()
+  plt.xlabel('x')
+  plt.ylabel('t')
+  plt.savefig('./fig_rho.png')
+  plt.close()
+
+  alp_trans = einshape('ij->ji', v_out)  # [nx, nt-1]
+  alp_trans = jnp.concatenate([alp_trans, alp_trans[:1,:]], axis = 0)  # [nx+1, nt-1]
+  dim1, dim2 = alp_trans.shape
+  fig = plt.figure()
+  plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], alp_trans)
+  plt.colorbar()
+  plt.xlabel('x')
+  plt.ylabel('t')
+  plt.savefig('./fig_alp.png')
+  plt.close()
+
+  HJ_residual = HJ_residual_fn(phi_out, v_out, dspatial, dt, epsl, fns_dict, x_arr, t_arr, fwd)
   HJ_residual_trans = einshape('ij->ji', HJ_residual)
   HJ_residual_trans = jnp.concatenate([HJ_residual_trans, HJ_residual_trans[:1,:]], axis = 0)  # [nx+1, nt]
   dim1, dim2 = HJ_residual_trans.shape
-  x_arr = jnp.linspace(0.0, 2.0, num = nx + 1, endpoint = True)
-  t_arr = jnp.linspace(0.0, T, num = nt, endpoint = True)[1:]
-  t_mesh, x_mesh = jnp.meshgrid(t_arr, x_arr)
   fig = plt.figure()
-  plt.contourf(x_mesh[:dim1, :dim2], t_mesh[:dim1, :dim2], HJ_residual_trans)
+  plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], HJ_residual_trans)
   plt.colorbar()
   plt.xlabel('x')
   plt.ylabel('t')
   plt.savefig('./fig_HJ_error.png')
   plt.close()
 
+  cont_residual = cont_residual_fn(rho_out, v_out, dspatial, dt, epsl, fns_dict, x_arr, t_arr, fwd, c_on_rho)
+  cont_residual_trans = einshape('ij->ji', cont_residual)
+  cont_residual_trans = jnp.concatenate([cont_residual_trans, cont_residual_trans[:1,:]], axis = 0)  # [nx+1, nt]
+  dim1, dim2 = cont_residual_trans.shape
+  print('cont_residual_trans shape, ', cont_residual_trans.shape)
+  plt.figure()
+  plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], cont_residual_trans)
+  plt.colorbar()
+  plt.xlabel('x')
+  plt.ylabel('t')
+  plt.savefig('./fig_cont_error.png')
+  plt.close()
 
   return results_out

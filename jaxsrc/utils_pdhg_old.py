@@ -269,14 +269,8 @@ def HJ_residual(phi, alp, dspatial, dt, epsl, fns_dict, x_arr, t_arr, fwd):
   L_val = fns_dict.L_fn(alp, x_arr, t_arr)
   f_plus_val = fns_dict.f_plus_fn(alp, x_arr, t_arr)
   f_minus_val = fns_dict.f_minus_fn(alp, x_arr, t_arr)
-  # print('phi: ', phi)
-  # print('f_plus_val: ', f_plus_val)
-  # print('f_minus_val: ', f_minus_val)
-  # print('Dx_right: ', Dx_right_decreasedim(phi, dx, fwd=fwd))
-  # print('Dx_left: ', Dx_left_decreasedim(phi, dx, fwd=fwd))
-  # print('Dt: ', Dt_decreasedim(phi, dt))
-  # print('L_val: ', L_val)
-  vec = Dx_right_decreasedim(phi, dx, fwd=fwd) * f_minus_val + Dx_left_decreasedim(phi, dx, fwd=fwd) * f_plus_val
+  # NOTE: the old version switch Dx right and left
+  vec = Dx_left_decreasedim(phi, dx, fwd=fwd) * f_minus_val + Dx_right_decreasedim(phi, dx, fwd=fwd) * f_plus_val
   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx, fwd=fwd)  # [nt-1, nx]
   vec = vec + L_val
   return vec
@@ -285,9 +279,8 @@ def cont_residual(rho, alp, dspatial, dt, epsl, fns_dict, x_arr, t_arr, fwd, c_o
   dx = dspatial[0]
   fp = fns_dict.f_plus_fn(alp, x_arr, t_arr)
   fm = fns_dict.f_minus_fn(alp, x_arr, t_arr)
-  # print('Dx_left_increasedim(fm, dx): ', Dx_left_increasedim(fm * rho_prev, dx))
-  # print('Dx_right_increasedim(fp, dx): ', Dx_right_increasedim(fp * rho_prev, dx))
-  delta_phi = Dx_left_increasedim(fm * rho, dx, fwd=fwd) + Dx_right_increasedim(fp * rho, dx, fwd=fwd) \
+  # NOTE: the old version switch Dx right and left
+  delta_phi = Dx_right_increasedim(fm * rho, dx, fwd=fwd) + Dx_left_increasedim(fp * rho, dx, fwd=fwd) \
               + epsl * Dxx_increasedim(alp, dx, fwd=fwd) # [nt, nx]
   # print('delta_phi: ', delta_phi)
   delta_phi += Dt_increasedim(rho,dt) # [nt, nx]
@@ -309,14 +302,12 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
 
 def update_alp(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr):
   dx = dspatial[0]
-  Dx_phi_left = Dx_left_decreasedim(phi, dx)
-  Dx_phi_right = Dx_right_decreasedim(phi, dx)
-  # print('Dx_phi_left', Dx_phi_left.shape)
-  # print('Dx_phi_right', Dx_phi_right.shape)
-  # print('x_arr', x_arr.shape)
-  # print('t_arr', t_arr.shape)
-  # print('alp_prev', alp_prev)
-  # print('sigma', sigma, flush=True)
+  # Dx_phi_left = Dx_left_decreasedim(phi, dx)
+  # Dx_phi_right = Dx_right_decreasedim(phi, dx)
+  # NOTE: old version is to use right derivative, so switch the order here
+  Dx_phi_left = Dx_right_decreasedim(phi, dx)
+  Dx_phi_right = Dx_left_decreasedim(phi, dx)
+
   alp = fns_dict.opt_alp_fn(Dx_phi_left, Dx_phi_right, x_arr, t_arr, alp_prev, sigma, rho)
   return alp
 
