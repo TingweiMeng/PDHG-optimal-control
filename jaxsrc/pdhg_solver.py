@@ -4,6 +4,7 @@ import utils
 from einshape import jax_einshape as einshape
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
 from functools import partial
+import matplotlib.pyplot as plt
 
 @partial(jax.jit, static_argnums=(2,))
 def Dx_right_decreasedim(phi, dx, fwd = False):
@@ -342,17 +343,22 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, v0,
     
     error = jnp.array([err1, err2, err3])
     error_all.append(error)
+    stopping_criteria_hj = jnp.linalg.norm(phi_next - phi_prev) / tau_phi
+    stopping_criteria_cont = jnp.linalg.norm(rho_next - rho_prev) / tau_rho
+
     if i % 100 == 0:
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}'.format(i,err1, err2, err3), flush = True)
       # print('rho_next: ', rho_next)
       # print('phi_next: ', phi_next)
       # print('v_next: ', v_next)
+      print('max rho {:.2f}, min rho {:.2f}'.format(jnp.max(rho_next), jnp.min(rho_next)))
       print('err phi: ', jnp.linalg.norm(phi_next - phi_prev))
       print('err rho: ', jnp.linalg.norm(rho_next - rho_prev))
       print('err v: ', jnp.linalg.norm(v_next - v_prev))
-
-    stopping_criteria_hj = jnp.linalg.norm(phi_next - phi_prev) / tau_phi
-    stopping_criteria_cont = jnp.linalg.norm(rho_next - rho_prev) / tau_rho
+      print('stopping_criteria_hj: ', stopping_criteria_hj)
+      print('stopping_criteria_cont: ', stopping_criteria_cont)
+      print('eps: ', eps)
+    
     if stopping_criteria_hj < eps and stopping_criteria_cont < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
@@ -444,11 +450,14 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
     # v_all.append(jnp.stack(v_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, 2**ndim] or [time_step_per_PDHG-1, nx, ny, 1]
     v_all.append(v_curr)
     rho_all.append(rho_curr)
-    g_diff = phi_curr[:1,...] - phi0[-1:,...]  # make sure the initial phi gives the terminal cond of next step
-    print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
-    phi0 = phi0 + g_diff
-    rho0 = rho_curr
-    v0 = v_curr
+    # g_diff = phi_curr[:1,...] - phi0[-1:,...]  # make sure the initial phi gives the terminal cond of next step
+    # print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
+    # phi0 = phi0 + g_diff
+    # rho0 = rho_curr
+    # v0 = v_curr
+    phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
+    rho0 = jnp.zeros([time_step_per_PDHG-1, nx]) + c_on_rho
+    v0 = jnp.zeros([time_step_per_PDHG-1, nx])
     if sol_nan:
       break
   phi_all.reverse()
@@ -466,4 +475,36 @@ def PDHG_multi_step_inverse(fn_update_primal, fn_update_dual, fns_dict, x_arr, n
     print('pdhg does not conv, please decrease sigma_hj and sigma_cont to be less than {:.2E} and {:.2E}'.format(sigma_hj_min, sigma_cont_min), flush = True)
   else:
     print('pdhg conv. Max err is {:.2E}, max num_iters is {}'.format(max_err, num_iters), flush = True)
+
+  # plot solution 
+  fig = plt.figure()
+  phi_trans = einshape('ij->ji', phi_out)  # [nx, nt]
+  phi_trans = jnp.concatenate([phi_trans, phi_trans[:1,:]], axis = 0)  # [nx+1, nt]
+  dim1, dim2 = phi_trans.shape
+  x_arr = jnp.linspace(0.0, 2.0, num = nx + 1, endpoint = True)
+  t_arr = jnp.linspace(0.0, T, num = nt, endpoint = True)
+  t_mesh, x_mesh = jnp.meshgrid(t_arr, x_arr)
+  plt.contourf(x_mesh[:dim1, :dim2], t_mesh[:dim1, :dim2], phi_trans)
+  plt.colorbar()
+  plt.xlabel('x')
+  plt.ylabel('t')
+  plt.savefig('./fig_solution.png')
+  plt.close()
+
+  HJ_residual = compute_HJ_residual_EO_1d_general(phi_out, dt, dspatial, fns_dict, epsl, x_arr, t_arr, fwd = fwd)
+  HJ_residual_trans = einshape('ij->ji', HJ_residual)
+  HJ_residual_trans = jnp.concatenate([HJ_residual_trans, HJ_residual_trans[:1,:]], axis = 0)  # [nx+1, nt]
+  dim1, dim2 = HJ_residual_trans.shape
+  x_arr = jnp.linspace(0.0, 2.0, num = nx + 1, endpoint = True)
+  t_arr = jnp.linspace(0.0, T, num = nt, endpoint = True)[1:]
+  t_mesh, x_mesh = jnp.meshgrid(t_arr, x_arr)
+  fig = plt.figure()
+  plt.contourf(x_mesh[:dim1, :dim2], t_mesh[:dim1, :dim2], HJ_residual_trans)
+  plt.colorbar()
+  plt.xlabel('x')
+  plt.ylabel('t')
+  plt.savefig('./fig_HJ_error.png')
+  plt.close()
+
+
   return results_out
