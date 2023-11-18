@@ -125,7 +125,7 @@ def set_up_example_fns(egno, ndim, period_spatial):
     x_period, y_period = period_spatial[0], period_spatial[1]
     alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
   
-  if egno == 1 or egno == 2:
+  if egno == 1 or egno == 2 or egno == 3:
     # J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
     J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
