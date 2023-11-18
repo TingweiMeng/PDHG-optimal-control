@@ -5,7 +5,7 @@ import pytz
 from datetime import datetime
 from pdhg_solver import PDHG_multi_step
 from solver import save
-import utils_pdhg
+import utils_pdhg as pdhg_v
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -61,11 +61,12 @@ def main(argv):
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
+
   if ndim == 1:
-    fn_update_primal = utils_pdhg.update_primal_1d
+    fn_update_primal = pdhg_v.update_primal_1d
   else:
-    fn_update_primal = utils_pdhg.update_primal_2d
-  fn_update_dual = utils_pdhg.update_dual
+    fn_update_primal = pdhg_v.update_primal_2d
+  fn_update_dual = pdhg_v.update_dual
 
   if ndim == 1:
     dspatial = [dx]
@@ -76,12 +77,12 @@ def main(argv):
     print('dspatial: ', dspatial)
     print('nspatial: ', nspatial)
   
-  results = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
                     epsl = epsl, stepsz_param=stepsz_param)
   if ifsave:
-    save(save_dir, filename_prefix, results)
+    save(save_dir, filename_prefix, (results, errs_none))
   print('phi: ', results[0][-1])
 
 
