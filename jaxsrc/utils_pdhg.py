@@ -222,8 +222,7 @@ def Dyy_increasedim(rho, dy):
   return out
 
 
-
-def update_rho_1d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
+def compute_HJ_residual_1d(phi, v, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   vp, vm = v[0], v[1]
   dx = dspatial[0]
   if 'Hstar_plus_fn' in fns_dict._fields and 'Hstar_minus_fn' in fns_dict._fields:  # seperable case
@@ -235,6 +234,22 @@ def update_rho_1d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, 
   vec = Dx_right_decreasedim(phi, dx) * vp + Dx_left_decreasedim(phi, dx) * vm
   vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
   vec = vec - Hstar_val
+  return vec
+
+def compute_cont_residual(rho, v, dt, dspatial, c_on_rho, epsl):
+  vp, vm = v[0], v[1]
+  dx = dspatial[0]
+  eps = 1e-4
+  mp = (rho + eps) * vp  # [nt-1, nx]
+  mm = (rho + eps) * vm  # [nt-1, nx]
+  delta_phi = Dx_left_increasedim(mp, dx) + Dx_right_increasedim(mm, dx) \
+              + Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx]
+  delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
+  return delta_phi
+
+
+def update_rho_1d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
+  vec = compute_HJ_residual_1d(phi, v, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   rho_next = rho_prev + sigma * vec
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
@@ -335,14 +350,7 @@ def update_v_2d_nonseperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr,
 
 @jax.jit
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fv, epsl):
-  vp_prev, vm_prev = v_prev[0], v_prev[1]
-  dx = dspatial[0]
-  eps = 1e-4
-  mp_prev = (rho_prev + eps) * vp_prev  # [nt-1, nx]
-  mm_prev = (rho_prev + eps) * vm_prev  # [nt-1, nx]
-  delta_phi = Dx_left_increasedim(mp_prev, dx) + Dx_right_increasedim(mm_prev, dx) \
-              + Dt_increasedim(rho_prev,dt) + epsl * Dxx_increasedim(rho_prev,dx) # [nt, nx]
-  delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
+  delta_phi = compute_cont_residual(rho_prev, v_prev, dt, dspatial, c_on_rho, epsl)
   phi_next = phi_prev - tau * solver.Poisson_eqt_solver(delta_phi, fv, dt)
   return phi_next
 
