@@ -104,7 +104,8 @@ def set_up_example_fns(egno, ndim, period_spatial):
   
   # NOTE: f_in_H_fn and c_in_H_fn are only used in this function and pdhg1d_m.py and pdhg2d_m.py
   if egno == 1:
-    J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
+    # J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
+    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
     f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
     c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
   elif egno == 2:
