@@ -45,8 +45,8 @@ tridiagonal_solve_batch_2d = jax.vmap(jax.vmap(tridiagonal_solve, in_axes=(None,
                             in_axes=(None, -1, None, -1), out_axes=(-1))
 
 
-def Poisson_eqt_solver(source_term, fv, dt):
-  ''' this solves -(D_{tt} + D_{xx}) phi_update = source_term
+def Poisson_eqt_solver(source_term, fv, dt, C = 1.0):
+  ''' this solves C * phi_update -(D_{tt} + D_{xx}) phi_update = source_term
   if Neumann_tc is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
   @parameters:
     source_term: [nt, nx]
@@ -62,7 +62,7 @@ def Poisson_eqt_solver(source_term, fv, dt):
   du = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
   Lap_t_diag = -jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
   Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx)  # [nt-1, nx]
-  thomas_b = einshape('n->mn', -fv, m = nt-1) + Lap_t_diag_rep # [nt-1, nx]  
+  thomas_b = einshape('n->mn', -fv, m = nt-1) + Lap_t_diag_rep + C # [nt-1, nx]  
   phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b, du, v_Fourier) # [nt-1, nx]
   F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
   phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
