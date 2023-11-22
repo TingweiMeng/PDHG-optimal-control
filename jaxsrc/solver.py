@@ -156,7 +156,8 @@ def set_up_example_fns(egno, ndim, period_spatial):
     def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
       alp1_prev, alp2_prev = alp_prev
       eps = 1e-4
-      param_inv = (rho + eps) / sigma
+      # param_inv = (rho + eps) / sigma
+      param_inv = 1.0 / sigma
       alp1_next = (Dx_right_phi + param_inv * alp1_prev) / (1 + param_inv)
       alp1_next = jnp.minimum(alp1_next, 0.0)
       alp2_next = (Dx_left_phi + param_inv * alp2_prev) / (1 + param_inv)
