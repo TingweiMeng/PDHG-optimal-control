@@ -222,27 +222,32 @@ def Dyy_increasedim(rho, dy):
   return out
 
 
-def compute_HJ_residual_1d(phi, v, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
-  vp, vm = v[0], v[1]
+def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
+  alp1, alp2 = alp[0], alp[1]
   dx = dspatial[0]
   if 'Hstar_plus_fn' in fns_dict._fields and 'Hstar_minus_fn' in fns_dict._fields:  # seperable case
-    Hstar_val = fns_dict.Hstar_plus_fn(vm, x_arr, t_arr) + fns_dict.Hstar_minus_fn(vp, x_arr, t_arr)
+    L_val = fns_dict.L1_fn(alp1, x_arr, t_arr) + fns_dict.L2_fn(alp2, x_arr, t_arr)
   elif 'Hstar_fn' in fns_dict._fields:  # non-seperable case
-    Hstar_val = fns_dict.Hstar_fn(jnp.stack([vp, vm], axis = 0), x_arr, t_arr)
+    # L_val = fns_dict.Hstar_fn(jnp.stack([vp, vm], axis = 0), x_arr, t_arr)
+    raise "non-seperable case not implemented yet"
   else:
     raise "fns_dict must contain Hstar_fn or Hxstar_plus_fn, Hxstar_minus_fn, Hystar_plus_fn, Hystar_minus_fn"
-  vec = Dx_right_decreasedim(phi, dx) * vp + Dx_left_decreasedim(phi, dx) * vm
-  vec = vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
-  vec = vec - Hstar_val
+  f_plus = fns_dict.f_plus_fn(alp1, x_arr, t_arr)
+  f_minus = fns_dict.f_minus_fn(alp2, x_arr, t_arr)
+  vec = Dx_right_decreasedim(phi, dx) * f_plus + Dx_left_decreasedim(phi, dx) * f_minus
+  vec = - vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
+  vec = vec - L_val
   return vec
 
-def compute_cont_residual(rho, v, dt, dspatial, c_on_rho, epsl):
-  vp, vm = v[0], v[1]
+def compute_cont_residual(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
+  alp1, alp2 = alp[0], alp[1]
   dx = dspatial[0]
   eps = 1e-4
-  mp = (rho + eps) * vp  # [nt-1, nx]
-  mm = (rho + eps) * vm  # [nt-1, nx]
-  delta_phi = Dx_left_increasedim(mp, dx) + Dx_right_increasedim(mm, dx) \
+  f_plus = fns_dict.f_plus_fn(alp1, x_arr, t_arr)
+  f_minus = fns_dict.f_minus_fn(alp2, x_arr, t_arr)
+  m1 = (rho + eps) * f_plus  # [nt-1, nx]
+  m2 = (rho + eps) * f_minus  # [nt-1, nx]
+  delta_phi = -Dx_left_increasedim(m1, dx) + -Dx_right_increasedim(m2, dx) \
               + Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx]
   delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
   return delta_phi
@@ -348,9 +353,9 @@ def update_v_2d_nonseperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr,
   return v_next
 
 
-@jax.jit
-def update_primal_1d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fv, epsl):
-  delta_phi = compute_cont_residual(rho_prev, v_prev, dt, dspatial, c_on_rho, epsl)
+@partial(jax.jit, static_argnames=("fns_dict",))
+def update_primal_1d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
+  delta_phi = compute_cont_residual(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
   phi_next = phi_prev - tau * solver.Poisson_eqt_solver(delta_phi, fv, dt)
   return phi_next
 

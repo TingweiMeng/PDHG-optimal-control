@@ -149,6 +149,10 @@ def set_up_example_fns(egno, ndim, period_spatial):
     Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2/ndim
     Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
     Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
+    f_plus_fn = lambda alp, x_arr, t_arr: jnp.maximum(-alp, 0.0)
+    f_minus_fn = lambda alp, x_arr, t_arr: jnp.minimum(-alp, 0.0)
+    L1_fn = lambda alp, x_arr, t_arr: jnp.maximum(-alp, 0.0) **2 / 2
+    L2_fn = lambda alp, x_arr, t_arr: jnp.minimum(-alp, 0.0) **2 / 2
   elif egno == 3:  # scheme for |p|_2 + f(x,t), non-seperable case, the indicator function is omitted
     if ndim == 1:
       H_fn = lambda p, x_arr, t_arr: jnp.sqrt(jnp.minimum(p[0],0)**2 + jnp.maximum(p[1],0)**2) + f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...,ndim] and [...]
@@ -177,15 +181,16 @@ def set_up_example_fns(egno, ndim, period_spatial):
     raise ValueError("egno {} not implemented".format(egno))
   
   if ndim == 1 and egno != 3:  # separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 'L1_fn', 'L2_fn',
                                         'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn'])
+                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'f_plus_fn', 'f_minus_fn'])
     fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
                         H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
                         Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
-                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn)
+                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
+                        f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn, L1_fn=L1_fn, L2_fn=L2_fn)
   elif ndim == 2 and egno != 3:  # separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 
+    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn',
                                         'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn',
                                         'Hxstar_plus_fn', 'Hxstar_minus_fn', 'Hystar_plus_fn', 'Hystar_minus_fn',
                                         'Hxstar_plus_prox_fn', 'Hxstar_minus_prox_fn', 'Hystar_plus_prox_fn', 'Hystar_minus_prox_fn'])
