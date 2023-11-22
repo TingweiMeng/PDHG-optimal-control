@@ -345,7 +345,7 @@ def update_v_2d_nonseperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr,
 @partial(jax.jit, static_argnames=("fns_dict",))
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
   delta_phi = compute_cont_residual(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
-  C = 0.0
+  C = 1.0
   phi_next = phi_prev + tau * solver.Poisson_eqt_solver(delta_phi, fv, dt, C = C)
   return phi_next
 
