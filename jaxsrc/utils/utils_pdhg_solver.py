@@ -2,11 +2,12 @@ import jax.numpy as jnp
 import utils.utils as utils
 from einshape import jax_einshape as einshape
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
                    ndim, dt, dspatial, c_on_rho, epsl = 0.0, stepsz_param=0.9, fv=None,
-                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
+                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False):
   '''
   @ parameters:
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
@@ -60,6 +61,11 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
       err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.maximum(jnp.linalg.norm(alp_p), 1.0)
     # err3: equation error
     err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+
+    if tfboard:
+      tf.summary.scalar('primal error', err1, step = i)
+      tf.summary.scalar('dual error', err2, step = i)
+      tf.summary.scalar('equation error', err3, step = i)
     
     error = jnp.array([err1, err2, err3])
     if error[2] < eps:
@@ -81,20 +87,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
   results_all.append((i+1, phi_next, rho_next, alp_next))
   error_all.append(error)
   error_all = jnp.array(error_all)
-  # plot pdhg errors for debugging [TODO: remove this]
-  plt.figure()
-  # create subfigs
-  plt.subplot(1, 3, 1)
-  plt.plot(error_all[:,0])
-  plt.title('primal error')
-  plt.subplot(1, 3, 2)
-  plt.plot(error_all[:,1])
-  plt.title('dual error')
-  plt.subplot(1, 3, 3)
-  plt.plot(error_all[:,2])
-  plt.title('equation error')
-  plt.savefig('dim{}_pdhg_errors.png'.format(ndim))
-  plt.close()
   return results_all, error_all
 
 
@@ -197,7 +189,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
       break
   phi_out = jnp.concatenate(phi_all, axis = 0)  # [nt, nx] or [nt, nx, ny]
   rho_out = jnp.concatenate(rho_all, axis = 0)  # [nt-1, nx] or [nt-1, nx, ny]
-  alp_out = jnp.concatenate(alp_all, axis = 0)  # [nt-1, nx, ny, dim_ctrl, 4] for 2d and [nt-1, nx, dim_ctrl, 2] for 1d
+  alp_out = jnp.concatenate(alp_all, axis = 1)  # [4, nt-1, nx, ny, dim_ctrl] for 2d and [2, nt-1, nx, dim_ctrl] for 1d
   results_out = [(max_iters, phi_out, rho_out, alp_out)]
   print('\n\n')
   print('===========================================')
