@@ -7,7 +7,7 @@ import tensorflow as tf
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
                    ndim, dt, dspatial, c_on_rho, epsl = 0.0, stepsz_param=0.9, fv=None,
-                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False):
+                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False, tfrecord_ind = 0):
   '''
   @ parameters:
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
@@ -63,9 +63,9 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
     err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
 
     if tfboard:
-      tf.summary.scalar('primal error', err1, step = i)
-      tf.summary.scalar('dual error', err2, step = i)
-      tf.summary.scalar('equation error', err3, step = i)
+      tf.summary.scalar('primal error', err1, step = tfrecord_ind + i)
+      tf.summary.scalar('dual error', err2, step = tfrecord_ind + i)
+      tf.summary.scalar('equation error', err3, step = tfrecord_ind + i)
     
     error = jnp.array([err1, err2, err3])
     if error[2] < eps:
@@ -93,7 +93,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
 def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, g, x_arr, 
                     ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     epsl = 0.0, stepsz_param=0.9, n_ctrl = None, fv=None,
-                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
+                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False):
   '''
   @ parameters:
     fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, x_arr: see PDHG_solver_oneiter
@@ -142,6 +142,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   max_err, max_iters = 0.0, 0
   
   utils.timer.tic('all_time')
+  tfrecord_ind = 0
   for i in range(nt_PDHG):
     utils.timer.tic('time_block_{}'.format(i))
     print('=================== nt_PDHG = {}, i = {} ==================='.format(nt_PDHG, i), flush=True)
@@ -155,7 +156,8 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
       results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict,
                                     phi0, rho0, alp0, x_arr, t_arr, ndim, dt, dspatial, c_on_rho, 
                                     epsl = epsl, stepsz_param=stepsz_param, fv=fv,
-                                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps)
+                                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, 
+                                    tfboard = tfboard, tfrecord_ind = tfrecord_ind)
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:  # if nan, decrease step size
           stepsz_param -= stepsz_param_delta
@@ -168,6 +170,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
         max_err = jnp.maximum(max_err, errs[-1][-1])
         pdhg_iters, phi_curr, rho_curr, alp_curr = results_all[-1]
         max_iters = jnp.maximum(max_iters, pdhg_iters)
+        tfrecord_ind += pdhg_iters
         # save results
         if i < nt_PDHG-1:  # if not the last time block, exclude the last time step
           phi_all.append(phi_curr[:-1,:])

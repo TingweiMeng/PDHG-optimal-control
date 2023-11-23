@@ -112,7 +112,7 @@ def main(argv):
   results, errs_all = PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, g, x_arr, 
                                        ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                                        epsl = epsl, stepsz_param=stepsz_param, fv=fv,
-                                       N_maxiter = N_maxiter, print_freq = print_freq, eps = eps)
+                                       N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, tfboard = FLAGS.tfboard)
   if ifsave:
     save(save_dir, filename_prefix, (results, errs_all))
 
