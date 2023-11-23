@@ -5,7 +5,7 @@ import pytz
 from datetime import datetime
 from utils.utils_pdhg_solver import PDHG_multi_step
 from solver import save
-import utils_pdhg
+import update_fns_in_pdhg as pdhg
 from utils.utils_precond import compute_Dxx_fft_fv
 import solver
 
@@ -65,16 +65,16 @@ def main(argv):
   print('shape of g: ', g.shape)
 
   if ndim == 1:
-    fn_update_primal = utils_pdhg.update_primal_1d
+    fn_update_primal = pdhg.update_primal_1d
     def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
       HJ_residual = solver.compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
       return jnp.mean(jnp.abs(HJ_residual))
   else:
-    fn_update_primal = utils_pdhg.update_primal_2d
+    fn_update_primal = pdhg.update_primal_2d
     def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
       HJ_residual = solver.compute_HJ_residual_EO_2d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
       return jnp.mean(jnp.abs(HJ_residual))
-  fn_update_dual = utils_pdhg.update_dual
+  fn_update_dual = pdhg.update_dual
 
   if ndim == 1:
     dspatial = (dx, )

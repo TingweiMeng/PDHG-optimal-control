@@ -11,8 +11,6 @@ jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
 
-
-
 def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   alp1, alp2 = alp
   dx = dspatial[0]
