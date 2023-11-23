@@ -6,30 +6,32 @@ from utils.utils_precond import compute_Dxx_fft_fv
 import matplotlib.pyplot as plt
 
 
-def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, ndim, phi0, rho0, alp0, 
-                   dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, epsl = 0.0,
-                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9, fv=None):
+def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
+                   ndim, dt, dspatial, c_on_rho, epsl = 0.0, stepsz_param=0.9, fv=None,
+                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
   '''
-  @ parameters:  # TODO: rearrage the parameters in functions
+  @ parameters:
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
                         output p_next, and other parameters
     fn_update_dual: function to update dual variable, takes d, p, delta_d, and other parameters
                         output d_next, and other parameters
-    ndim: int, 1 or 2
+    fn_compute_err: function to compute error, take phi and other parameters
+    fns_dict: dict of functions, see the function set_up_example_fns in solver.py
     phi0: [nt, nx] for 1d, [nt, nx, ny] for 2d
     rho0: [nt-1, nx] for 1d, [nt-1, nx, ny] for 2d
     alp0: (alp1, alp2), where alp1 and alp2 are [nt-1, nx, dim_ctrl] for 1d
           (alp1_x, alp2_x, alp1_y, alp2_y), where alp1_x, alp2_x, alp1_y, alp2_y are [nt-1, nx, ny, dim_ctrl] for 2d
+    ndim: int, 1 or 2
     dt, c_on_rho: scalar
     dspatial: (dx, dy) for 2d, (dx,) for 1d
-    fns_dict: dict of functions, see the function set_up_example_fns in solver.py
     x_arr: array that can be broadcasted to [1, nx, 1] for 1d, [1, nx, ny, 2] for 2d
     t_arr: array that can be broadcasted to [nt-1, 1] for 1d, [nt-1, 1, 1] for 2d
-    epsl: scalar, diffusion coefficient [TODO: not used yet]
+    epsl: scalar, diffusion coefficient
     N_maxiter: int, maximum number of iterations
     print_gap: int, gap for printing and saving results
     eps: scalar, stopping criterion
     stepsz_param: scalar, step size parameter
+    fv: [nx] for 1d, [nx, ny] for 2d, FFT of Laplacian operator, or None if do not use preconditioning
   @ returns:  #TODO: remove None in results_all
     results_all: list of tuples, each tuple is (iter, alp_next, rho_next, None, phi_next)
     error_all: [N_maxiter, 3], primal error, dual error, equation error
@@ -82,10 +84,24 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, ndim, 
   return results_all, jnp.array(error_all)
 
 
-def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, x_arr, nt, nspatial, ndim,
-                    g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
-                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                    epsl = 0.0, stepsz_param=0.9, n_ctrl = None, fv=None):
+def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, g, x_arr, 
+                    ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
+                    epsl = 0.0, stepsz_param=0.9, n_ctrl = None, fv=None,
+                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6):
+  '''
+  @ parameters:
+    fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, x_arr: see PDHG_solver_oneiter
+    g: [1, nx] for 1d, [1, nx, ny] for 2d
+    ndim, nt, nspatial, c_on_rho, epsl, stepsz_param, fv: see PDHG_solver_oneiter
+    dt: scalar, time step size
+    dspatial: (dx,) for 1d, (dx, dy) for 2d
+    time_step_per_PDHG: int, number of time steps per time block (run PDHG_solver_oneiter in each block)
+    n_ctrl: int, number of control variables
+    N_maxiter, print_freq, eps: see PDHG_solver_oneiter
+  @ returns:
+    results_out: list of tuples, each tuple is (iter, alp_next, rho_next, None, phi_next)
+    error_all: [N_maxiter, 3], primal error, dual error, equation error
+  '''
   if n_ctrl is None:
     n_ctrl = ndim
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
@@ -129,11 +145,10 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
       t_arr = t_arr[:,None,None]  # [time_step_per_PDHG-1, 1, 1]
 
     while True:  # decrease step size if necessary
-      results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, 
-                                    ndim, phi0, rho0, alp0, 
-                                    dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
-                                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                                    epsl = epsl, stepsz_param=stepsz_param, fv=fv)
+      results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict,
+                                    phi0, rho0, alp0, x_arr, t_arr, ndim, dt, dspatial, c_on_rho, 
+                                    epsl = epsl, stepsz_param=stepsz_param, fv=fv,
+                                    N_maxiter = N_maxiter, print_freq = print_freq, eps = eps)
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:  # if nan, decrease step size
           stepsz_param -= stepsz_param_delta
@@ -174,54 +189,4 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
     print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
   else:
     print('pdhg conv. Max err is {:.2E}. Max iters is {}'.format(max_err, max_iters), flush = True)
-
-  # plot solution 
-  # T = dt * (nt-1)
-  # phi_trans = einshape('ij->ji', phi_out)  # [nx, nt]
-  # phi_trans = jnp.concatenate([phi_trans, phi_trans[:1,:]], axis = 0)  # [nx+1, nt]
-  # dim1, dim2 = phi_trans.shape
-  # x_arr = jnp.linspace(0.0, 2.0, num = nx + 1, endpoint = True)
-  # t_arr = jnp.linspace(0.0, T, num = nt, endpoint = True)
-  # t_mesh, x_mesh = jnp.meshgrid(t_arr, x_arr)
-  # fig = plt.figure()
-  # plt.contourf(x_mesh[:dim1, :dim2], t_mesh[:dim1, :dim2], phi_trans)
-  # plt.colorbar()
-  # plt.xlabel('x')
-  # plt.ylabel('t')
-  # plt.savefig('./fig_solution.png')
-  # plt.close()
-
-  # rho_trans = einshape('ij->ji', rho_out)  # [nx, nt-1]
-  # rho_trans = jnp.concatenate([rho_trans, rho_trans[:1,:]], axis = 0)  # [nx+1, nt-1]
-  # dim1, dim2 = rho_trans.shape
-  # fig = plt.figure()
-  # plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], rho_trans)
-  # plt.colorbar()
-  # plt.xlabel('x')
-  # plt.ylabel('t')
-  # plt.savefig('./fig_rho.png')
-  # plt.close()
-
-  # print('v_out shape: ', jnp.shape(v_out), flush = True)
-  # v0_trans = einshape('ij->ji', v_out[...,0])  # [nx, nt-1]
-  # v0_trans = jnp.concatenate([v0_trans, v0_trans[:1,:]], axis = 0)  # [nx+1, nt-1]
-  # dim1, dim2 = v0_trans.shape
-  # fig = plt.figure()
-  # plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], v0_trans)
-  # plt.colorbar()
-  # plt.xlabel('x')
-  # plt.ylabel('t')
-  # plt.savefig('./fig_v0.png')
-  # plt.close()
-
-  # v1_trans = einshape('ij->ji', v_out[...,1])  # [nx, nt-1]
-  # v1_trans = jnp.concatenate([v1_trans, v1_trans[:1,:]], axis = 0)  # [nx+1, nt-1]
-  # dim1, dim2 = v1_trans.shape
-  # fig = plt.figure()
-  # plt.contourf(x_mesh[:dim1, -dim2:], t_mesh[:dim1, -dim2:], v1_trans)
-  # plt.colorbar()
-  # plt.xlabel('x')
-  # plt.ylabel('t')
-  # plt.savefig('./fig_v1.png')
-  # plt.close()
   return results_out, None
