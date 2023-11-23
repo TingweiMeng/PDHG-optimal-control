@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 import os
-import solver
+from utils.utils_precond import H1_precond_1d, H1_precond_2d
 
 jax.config.update("jax_enable_x64", True)
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -377,14 +377,14 @@ def update_alp_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, e
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
   delta_phi = compute_cont_residual_1d(rho_prev, alp_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
   C = 1.0
-  phi_next = phi_prev + tau * solver.Poisson_eqt_solver_1d(delta_phi, fv, dt, C = C)
+  phi_next = phi_prev + tau * H1_precond_1d(delta_phi, fv, dt, C = C)
   return phi_next
 
 @partial(jax.jit, static_argnames=("fns_dict",))
 def update_primal_2d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
   delta_phi = compute_cont_residual_2d(rho_prev, alp_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
   C = 1.0
-  phi_next = phi_prev + tau * solver.Poisson_eqt_solver_2d(delta_phi, fv, dt, C = C)
+  phi_next = phi_prev + tau * H1_precond_2d(delta_phi, fv, dt, C = C)
   return phi_next
 
 

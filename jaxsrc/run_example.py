@@ -6,6 +6,8 @@ from datetime import datetime
 from pdhg_solver import PDHG_multi_step
 from solver import save
 import utils_pdhg
+from utils.utils_precond import compute_Dxx_fft_fv
+import solver
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -51,7 +53,7 @@ def main(argv):
   
   J = set_up_J(egno, ndim, period_spatial)
   fns_dict = set_up_example_fns(egno, ndim)
-
+  
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
   else:
@@ -62,26 +64,34 @@ def main(argv):
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
-
   if ndim == 1:
     fn_update_primal = utils_pdhg.update_primal_1d
+    def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
+      HJ_residual = solver.compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+      return jnp.mean(jnp.abs(HJ_residual))
   else:
     fn_update_primal = utils_pdhg.update_primal_2d
+    def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
+      HJ_residual = solver.compute_HJ_residual_EO_2d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+      return jnp.mean(jnp.abs(HJ_residual))
   fn_update_dual = utils_pdhg.update_dual
 
   if ndim == 1:
-    dspatial = [dx]
-    nspatial = [nx]
+    dspatial = (dx, )
+    nspatial = (nx, )
   else:
-    dspatial = [dx, dy]
-    nspatial = [nx, ny]
+    dspatial = (dx, dy)
+    nspatial = (nx, ny)
     print('dspatial: ', dspatial)
     print('nspatial: ', nspatial)
   
-  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+  # fv for preconditioning
+  fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial)
+
+  results, errs_none = PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                    epsl = epsl, stepsz_param=stepsz_param)
+                    epsl = epsl, stepsz_param=stepsz_param, fv=fv)
   if ifsave:
     save(save_dir, filename_prefix, (results, errs_none))
   print('phi: ', results[0][-1])

@@ -1,16 +1,16 @@
 import jax
 import jax.numpy as jnp
-import utils
+import utils.utils as utils
 from einshape import jax_einshape as einshape
-from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general, compute_Dxx_fft_fv
+from utils.utils_precond import compute_Dxx_fft_fv
 import matplotlib.pyplot as plt
 
 
-def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, alp0, 
+def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, ndim, phi0, rho0, alp0, 
                    dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr, epsl = 0.0,
-                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9):
+                   N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, stepsz_param=0.9, fv=None):
   '''
-  @ parameters:  #TODO: add a function for evaluating the error, TODO: rearrage the parameters in functions
+  @ parameters:  # TODO: rearrage the parameters in functions
     fn_update_primal: function to update primal variable, takes p, d, delta_p, and other parameters, 
                         output p_next, and other parameters
     fn_update_dual: function to update dual variable, takes d, p, delta_d, and other parameters
@@ -42,9 +42,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, alp0
   tau_phi = stepsz_param / scale
   tau_rho = stepsz_param * scale
   
-  nspatial = jnp.shape(phi0)[1:]  # [nx] or [nx, ny]
-  fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial)
-
   error_all = []
   results_all = []
 
@@ -62,11 +59,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, alp0
     for alp_p, alp_n in zip(alp_prev, alp_next):
       err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.maximum(jnp.linalg.norm(alp_p), 1.0)
     # err3: equation error
-    if ndim == 1:
-      HJ_residual = compute_HJ_residual_EO_1d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
-    elif ndim == 2:
-      HJ_residual = compute_HJ_residual_EO_2d_general(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
-    err3 = jnp.mean(jnp.abs(HJ_residual))
+    err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
     
     error = jnp.array([err1, err2, err3])
     error_all.append(error)
@@ -89,10 +82,10 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, alp0
   return results_all, jnp.array(error_all)
 
 
-def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspatial, ndim,
+def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, x_arr, nt, nspatial, ndim,
                     g, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6,
-                    epsl = 0.0, stepsz_param=0.9, n_ctrl = None):
+                    epsl = 0.0, stepsz_param=0.9, n_ctrl = None, fv=None):
   if n_ctrl is None:
     n_ctrl = ndim
   assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
@@ -136,10 +129,11 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, x_arr, nt, nspat
       t_arr = t_arr[:,None,None]  # [time_step_per_PDHG-1, 1, 1]
 
     while True:  # decrease step size if necessary
-      results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, ndim, phi0, rho0, alp0, 
+      results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, 
+                                    ndim, phi0, rho0, alp0, 
                                     dt, dspatial, c_on_rho, fns_dict, x_arr, t_arr,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps,
-                                    epsl = epsl, stepsz_param=stepsz_param)
+                                    epsl = epsl, stepsz_param=stepsz_param, fv=fv)
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:  # if nan, decrease step size
           stepsz_param -= stepsz_param_delta
