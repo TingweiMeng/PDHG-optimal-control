@@ -93,7 +93,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
   plt.subplot(1, 3, 3)
   plt.plot(error_all[:,2])
   plt.title('equation error')
-  plt.savefig('pdhg_errors.png')
+  plt.savefig('dim{}_pdhg_errors.png'.format(ndim))
   plt.close()
   return results_all, error_all
 
