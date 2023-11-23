@@ -5,36 +5,22 @@ import matplotlib.pyplot as plt
 from einshape import jax_einshape as einshape
 import os
 from print_n_plot import read_solution
+import utils.utils as utils
 
-def plot_solution_1d(phi, nt, nspatial, T, period_spatial, foldername, filename, epsl = 0, T_divisor=1):
+def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
   ''' plot solution and error of 1d HJ PDE
   @ parameters:
     phi, error: [nt, nx]
-    nt: integer
-    nspatial: list of one number nx
-    T: float
-    period_spatial: list of one number x_period
-    figname: string for saving figure
-    epsl: float, diffusion coefficient
+    x_arr: [1, nx, 1]
+    t_arr: [nt, 1]
+    title: string
+    tfboard: bool, if True, return tf image
   '''
-  nx = nspatial[0]
-  x_period = period_spatial[0]
-  name_prefix = 'nt{}_nx{}'.format(nt, nx)
-  if epsl == 0:
-    name_prefix += '_epsl0_'
-  elif epsl == 0.1:
-    name_prefix += '_epsl0p1_'
-  else:
-    raise ValueError("epsl must be 0 or 0.1")
-  if phi.shape[0] != nt:
-    raise ValueError("phi.shape[0] != nt")
-  if phi.shape[1] == nx:
-    phi = jnp.concatenate((phi, phi[:,0:1]), axis = 1)  
-  elif phi.shape[1] != nx + 1:
-    raise ValueError("phi.shape[1] != nx + 1 and phi.shape[1] != nx")
-  x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)
-  t_arr = np.linspace(0.0, T, num = nt, endpoint = True)
-  t_mesh, x_mesh = np.meshgrid(t_arr, x_arr)
+  x_arr = jnp.squeeze(x_arr)  # [nx]
+  t_arr = jnp.squeeze(t_arr)  # [nt]
+  assert phi.shape[0] == t_arr.shape[0], f"arr shape_0 ({phi.shape[0]}) != t_arr shape ({t_arr.shape[0]})"
+  assert phi.shape[1] == x_arr.shape[0], f"arr shape_1 ({phi.shape[1]}) != x_arr shape ({x_arr.shape[0]})"
+  t_mesh, x_mesh = np.meshgrid(t_arr, x_arr)  # [nx, nt]
   # plot solution
   phi_trans = einshape('ij->ji', phi)  # [nx, nt]
   fig = plt.figure()
@@ -42,56 +28,43 @@ def plot_solution_1d(phi, nt, nspatial, T, period_spatial, foldername, filename,
   plt.colorbar()
   plt.xlabel('x')
   plt.ylabel('t')
-  plt.savefig(foldername + name_prefix + filename + '.png')
+  plt.title(title)
+  if tfboard:
+    return utils.plot_to_image(fig)
+  else:
+    return fig
+    
 
-
-
-def plot_solution_2d(phi, nt, n_spatial, T, period_spatial, foldername, filename, epsl=0.0, T_divisor=4):
+def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True):
   '''
   @ parameters:
     phi: [nt, nx, ny]
-    nt: integer
-    n_spatial: [nx, ny]
-    T: float
-    period_spatial: [x_period, y_period]
-    figname: string for saving figure
-    epsl: float, diffusion coefficient
+    x_arr: [1, nx, ny, 2]
+    t_arr: [nt, 1, 1]
     T_divisor: integer, number of figures to plot
+    tfboard: bool, if True, return tf image
+  @ returns:
+    tf image or fig
   '''
-  nx, ny = n_spatial[0], n_spatial[1]
-  x_period, y_period = period_spatial[0], period_spatial[1]
-  name_prefix = 'nt{}_nx{}_ny{}'.format(nt, nx, ny)
-  if epsl == 0:
-    name_prefix += '_epsl0_'
-  elif epsl == 0.1:
-    name_prefix += '_epsl0p1_'
+  x_arr = jnp.squeeze(x_arr)  # [nx, ny, 2]
+  t_arr = jnp.squeeze(t_arr)  # [nt]
+
+  fig, axs = plt.subplots(T_divisor // 2, 2, figsize=(10, 10))
+  nt = t_arr.shape[0]
+  for i in range(T_divisor):
+    ind = (nt-1) // (T_divisor - 1) * i
+    ax = axs[i // 2, i % 2]
+    ax.set_title('t = {:.2f}'.format(t_arr[ind]))
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    # contourf plot
+    ax.contourf(x_arr[...,0], x_arr[...,1], phi[ind,...])  # TODO: check domain 
+    ax.colorbar()
+  fig.suptitle(title)
+  if tfboard:
+    return utils.plot_to_image(fig)
   else:
-    raise ValueError("epsl must be 0 or 0.1")
-  x_arr = np.linspace(0.0, x_period, num = nx + 1, endpoint = True)
-  y_arr = np.linspace(0.0, y_period, num = ny + 1, endpoint = True)
-  x_mesh, y_mesh = np.meshgrid(x_arr, y_arr, indexing='ij')
-
-  # adjust boundary values
-  if phi.shape[1] == nx:
-    phi = jnp.concatenate((phi, phi[:,0:1,:]), axis = 1)
-  elif phi.shape[1] != nx + 1:
-    raise ValueError("phi.shape[1] != nx + 1 and phi.shape[1] != nx")
-  if phi.shape[2] == ny:
-    phi = jnp.concatenate((phi, phi[:,:,0:1]), axis = 2)
-  elif phi.shape[2] != ny + 1:
-    raise ValueError("phi.shape[2] != ny + 1 and phi.shape[2] != ny")
-
-  dt = T / (nt-1)
-  for i in range (T_divisor):
-    ind = (nt-1)*(i+1)//T_divisor
-    t = dt * ind
-    fig = plt.figure()
-    plt.contourf(x_mesh, y_mesh, phi[ind,...])
-    plt.colorbar()
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.savefig(foldername + name_prefix + filename + '_t_{:.2f}.png'.format(t))
-    plt.close(fig)
+    return fig
     
 
 def main(argv):

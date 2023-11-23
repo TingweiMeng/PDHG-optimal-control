@@ -8,6 +8,9 @@ from solver import save
 import update_fns_in_pdhg as pdhg
 from utils.utils_precond import compute_Dxx_fft_fv
 import solver
+import tensorflow as tf
+import os
+import plot_soln
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -25,6 +28,21 @@ def main(argv):
   time_step_per_PDHG = FLAGS.time_step_per_PDHG
   eps = FLAGS.eps
   T = FLAGS.T
+
+  if ndim == 1:
+    prob_name = 'eg{}_nt{}_nx{}_epsl{:.2f}_c{}'.format(egno, nt, nx, epsl, c_on_rho)
+  elif ndim == 2:
+    prob_name = 'eg{}_nt{}_nx{}_ny{}_epsl{:.2f}_c{}'.format(egno, nt, nx, ny, epsl, c_on_rho)
+  else:
+    raise NotImplementedError
+
+  if FLAGS.tfboard:
+    time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
+    stamp = time_stamp
+    results_dir = f'./tf_save/{prob_name}/'+ stamp
+    print("tf foldername: ', results_dir")
+    file_writer = tf.summary.create_file_writer(results_dir)
+    file_writer.set_as_default()
 
   print('nx: ', nx)
   print('ny: ', ny)
@@ -56,11 +74,14 @@ def main(argv):
   
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
+    t_arr = jnp.linspace(0.0, T, num = nt)[:,None]  # [nt, 1]
   else:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)  
     y_arr = jnp.linspace(0.0, x_period - dy, num = ny)
     x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')  # [nx, ny]
     x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
+    t_arr = jnp.linspace(0.0, T, num = nt)[:,None,None]  # [nt, 1, 1]
+
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
@@ -94,7 +115,32 @@ def main(argv):
                                        N_maxiter = N_maxiter, print_freq = print_freq, eps = eps)
   if ifsave:
     save(save_dir, filename_prefix, (results, errs_all))
-  print('phi: ', results[-1][1])
+
+  phi = results[-1][1]
+  rho = results[-1][2]
+  alp = results[-1][3]
+
+  if FLAGS.tfboard:
+    if ndim == 1:
+      plot_fn = plot_soln.plot_solution_1d
+      alp_titles = ['alp_1', 'alp_2']
+    elif ndim == 2:
+      plot_fn = plot_soln.plot_solution_2d
+      alp_titles = ['alp_11', 'alp_12', 'alp_21', 'alp_22']
+    else:
+      raise NotImplementedError
+    fig_phi = plot_fn(phi, x_arr, t_arr, title = 'phi', tfboard = True)
+    tf.summary.image('phi', fig_phi, step = 0)
+    fig_rho = plot_fn(rho, x_arr, t_arr[:-1,...], title = 'rho', tfboard = True)
+    tf.summary.image('rho', fig_rho, step = 0)
+    for i in range(2**ndim):
+      fig_alp = plot_fn(alp[i,...,0], x_arr, t_arr[:-1,...], title = alp_titles[i] + ', x-coordinate', tfboard = True)
+      tf.summary.image(alp_titles[i] + '_x', fig_alp, step = 0)
+      if ndim == 2:
+        fig_alp = plot_fn(alp[i,...,1], x_arr, t_arr[:-1,...], title = alp_titles[i] + ', y-coordinate', tfboard = True)
+      tf.summary.image(alp_titles[i] + '_y', fig_alp, step = 0)
+  
+  print('phi: ', phi)
 
 
 
@@ -102,19 +148,22 @@ def main(argv):
 
 if __name__ == '__main__':
   FLAGS = flags.FLAGS
+  flags.DEFINE_integer('egno', 1, 'index of example')
+  flags.DEFINE_integer('ndim', 1, 'spatial dimension')
   flags.DEFINE_integer('nt', 11, 'size of t grids')
   flags.DEFINE_integer('nx', 20, 'size of x grids')
   flags.DEFINE_integer('ny', 20, 'size of y grids')
-  flags.DEFINE_integer('ndim', 1, 'spatial dimension')
-  flags.DEFINE_integer('egno', 1, 'index of example')
-  flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
-  flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
-  flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
+  
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('T', 1.0, 'final time')
+  flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
+  
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
   flags.DEFINE_integer('N_maxiter', 1000000, 'maximum number of iterations')
-
+  flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
+
+  flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
+  flags.DEFINE_boolean('tfboard', False, 'if use tfboard')
   
   app.run(main)
