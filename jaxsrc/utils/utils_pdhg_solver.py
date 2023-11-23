@@ -158,6 +158,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
                                     epsl = epsl, stepsz_param=stepsz_param, fv=fv,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, 
                                     tfboard = tfboard, tfrecord_ind = tfrecord_ind)
+      tfrecord_ind += results_all[-1][0]
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:  # if nan, decrease step size
           stepsz_param -= stepsz_param_delta
@@ -170,7 +171,6 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
         max_err = jnp.maximum(max_err, errs[-1][-1])
         pdhg_iters, phi_curr, rho_curr, alp_curr = results_all[-1]
         max_iters = jnp.maximum(max_iters, pdhg_iters)
-        tfrecord_ind += pdhg_iters
         # save results
         if i < nt_PDHG-1:  # if not the last time block, exclude the last time step
           phi_all.append(phi_curr[:-1,:])
