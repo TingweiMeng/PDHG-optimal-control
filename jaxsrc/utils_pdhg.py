@@ -280,13 +280,13 @@ def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
   return delta_phi
 
 
-def update_rho_1d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
-  vec = compute_HJ_residual_1d(phi, v, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
+  vec = compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   rho_next = rho_prev + sigma * vec
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
-def update_v_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
+def update_alp_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
   '''
   @ parameters:
     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
@@ -301,13 +301,13 @@ def update_v_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps
     raise NotImplementedError
   return alp_next
 
-def update_rho_2d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
-  vec = compute_HJ_residual_2d(phi, v, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+def update_rho_2d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
+  vec = compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   rho_next = rho_prev + sigma * vec
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
-def update_v_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
+def update_alp_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
   '''
   @ parameters:
     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
@@ -374,27 +374,27 @@ def update_v_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps
 
 
 @partial(jax.jit, static_argnames=("fns_dict",))
-def update_primal_1d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
-  delta_phi = compute_cont_residual_1d(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
+def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
+  delta_phi = compute_cont_residual_1d(rho_prev, alp_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
   C = 1.0
   phi_next = phi_prev + tau * solver.Poisson_eqt_solver_1d(delta_phi, fv, dt, C = C)
   return phi_next
 
 @partial(jax.jit, static_argnames=("fns_dict",))
-def update_primal_2d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
-  delta_phi = compute_cont_residual_2d(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
+def update_primal_2d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
+  delta_phi = compute_cont_residual_2d(rho_prev, alp_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
   C = 1.0
   phi_next = phi_prev + tau * solver.Poisson_eqt_solver_2d(delta_phi, fv, dt, C = C)
   return phi_next
 
 
 @partial(jax.jit, static_argnames=("fns_dict", "ndim"))
-def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim):
+def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, fns_dict, ndim):
   if ndim == 1:
-    update_v = update_v_1d
+    update_alp = update_alp_1d
     update_rho = update_rho_1d
   elif ndim == 2:
-    update_v = update_v_2d
+    update_alp = update_alp_2d
     # if 'Hxstar_plus_prox_fn' in fns_dict._fields and 'Hxstar_minus_prox_fn' in fns_dict._fields and \
     #    'Hystar_plus_prox_fn' in fns_dict._fields and 'Hystar_minus_prox_fn' in fns_dict._fields:
     #   update_v = update_v_2d_seperable
@@ -406,26 +406,26 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial
     update_rho = update_rho_2d
   else:
     raise NotImplementedError
-  v_next = update_v(v_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr)
-  rho_next = update_rho(rho_prev, phi_bar, v_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr)
+  alp_next = update_alp(alp_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr)
+  rho_next = update_rho(rho_prev, phi_bar, alp_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr)
   err = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
-  for v0, v1 in zip(v_prev, v_next):
-    err = jnp.maximum(err, jnp.linalg.norm(v1 - v0) / jnp.maximum(jnp.linalg.norm(v0), 1.0))
-  return rho_next, v_next, err
+  for alp_p, alp_n in zip(alp_prev, alp_next):
+    err = jnp.maximum(err, jnp.linalg.norm(alp_n - alp_p) / jnp.maximum(jnp.linalg.norm(alp_p), 1.0))
+  return rho_next, alp_next, err
 
 
-def update_dual(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
-                   rho_v_iters=10, eps=1e-7):
+def update_dual(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
+                   rho_alp_iters=10, eps=1e-7):
   '''
   @ parameters:
   fns_dict: dict of functions, see the function set_up_example_fns in solver.py
   '''
-  for j in range(rho_v_iters):
-    rho_next, v_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial, epsl,
+  for j in range(rho_alp_iters):
+    rho_next, alp_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl,
                                                               x_arr, t_arr, fns_dict, ndim)
     if err < eps:
       break
     rho_prev = rho_next
-    v_prev = v_next
-  return rho_next, v_next
+    alp_prev = alp_next
+  return rho_next, alp_next
   
