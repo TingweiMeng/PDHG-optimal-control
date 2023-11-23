@@ -6,3 +6,4 @@ useless/*
 **/check_points*/*
 **/*.pickle
 **/*.png
+**/tf_save/*
