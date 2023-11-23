@@ -5,7 +5,7 @@ import pytz
 from datetime import datetime
 from pdhg_solver import PDHG_multi_step
 from solver import save
-import utils_pdhg as pdhg_v
+import utils_pdhg
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -64,10 +64,10 @@ def main(argv):
 
 
   if ndim == 1:
-    fn_update_primal = pdhg_v.update_primal_1d
+    fn_update_primal = utils_pdhg.update_primal_1d
   else:
-    fn_update_primal = pdhg_v.update_primal_2d
-  fn_update_dual = pdhg_v.update_dual
+    fn_update_primal = utils_pdhg.update_primal_2d
+  fn_update_dual = utils_pdhg.update_dual
 
   if ndim == 1:
     dspatial = [dx]
