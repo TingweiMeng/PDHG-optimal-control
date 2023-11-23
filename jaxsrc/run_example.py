@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 from absl import app, flags, logging
-from solver import set_up_example_fns
+from solver import set_up_example_fns, set_up_J
 import pytz
 from datetime import datetime
 from pdhg_solver import PDHG_multi_step
@@ -45,11 +45,12 @@ def main(argv):
   x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
 
   if ndim == 1:
-    period_spatial = [x_period]
+    period_spatial = (x_period,)
   else:
-    period_spatial = [x_period, y_period]
+    period_spatial = (x_period, y_period)
   
-  J, fns_dict = set_up_example_fns(egno, ndim, period_spatial)
+  J = set_up_J(egno, ndim, period_spatial)
+  fns_dict = set_up_example_fns(egno, ndim)
 
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]

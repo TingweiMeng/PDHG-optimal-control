@@ -10,6 +10,23 @@ from utils import timer
 
 jax.config.update("jax_enable_x64", True)
 
+def compute_Dxx_fft_fv(ndim, nspatial, dspatial):
+  # fv used in fft for preconditioning (see Poisson_eqt_solver_1d or Poisson_eqt_solver_2d)
+  if ndim == 1:
+    dx = dspatial[0]
+    nx = nspatial[0]
+    Lap_vec = jnp.array([-2/(dx*dx), 1/(dx*dx)] + [0.0] * (nx-3) + [1/(dx*dx)])
+    fv = jnp.fft.fft(Lap_vec)  # [nx]
+  elif ndim == 2:
+    dx, dy = dspatial
+    nx, ny = nspatial
+    Lap_mat = jnp.array([[-2/(dx*dx)-2/(dy*dy), 1/(dy*dy)] + [0.0] * (ny-3) + [1/(dy*dy)],
+                        [1/(dx*dx)] + [0.0] * (ny -1)] + [[0.0]* ny] * (nx-3) + \
+                        [[1/(dx*dx)] + [0.0] * (ny-1)])  # [nx, ny]
+    fv = jnp.fft.fft2(Lap_mat)  # [nx, ny]
+  else:
+    raise NotImplementedError
+  return fv
 
 
 def tridiagonal_solve(dl, d, du, b): 
@@ -45,7 +62,7 @@ tridiagonal_solve_batch_2d = jax.vmap(jax.vmap(tridiagonal_solve, in_axes=(None,
                             in_axes=(None, -1, None, -1), out_axes=(-1))
 
 
-def Poisson_eqt_solver(source_term, fv, dt, C = 1.0):
+def Poisson_eqt_solver_1d(source_term, fv, dt, C = 1.0):
   ''' this solves C * phi_update -(D_{tt} + D_{xx}) phi_update = source_term
   if Neumann_tc is True, we have zero Neumann boundary condition at t=T; otherwise, we have zero Dirichlet boundary condition at t=T
   @parameters:
@@ -68,156 +85,88 @@ def Poisson_eqt_solver(source_term, fv, dt, C = 1.0):
   phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
   return phi_update
 
-def Poisson_eqt_solver_2d(source_term, fv, dt):
+def Poisson_eqt_solver_2d(source_term, fv, dt, C = 1.0):
   nt, nx, ny = jnp.shape(source_term)
   v_Fourier =  jnp.fft.fft2(source_term[1:,...], axes = (1,2)) # [nt-1, nx, ny]
-  dl = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  du = jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  Lap_t_diag = jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
+  dl = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  du = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  Lap_t_diag = -jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
   Lap_t_diag_rep = einshape('n->nmk', Lap_t_diag, m = nx, k = ny)  # [nt-1, nx, ny]
-  thomas_b = einshape('nk->mnk', fv, m = nt-1) + Lap_t_diag_rep # [nt-1, nx, ny]
+  thomas_b = einshape('nk->mnk', -fv, m = nt-1) + Lap_t_diag_rep + C # [nt-1, nx, ny]
   phi_fouir_part = tridiagonal_solve_batch_2d(dl, thomas_b, du, v_Fourier)  # [nt-1, nx, ny]
   F_phi_updates = jnp.fft.ifft2(phi_fouir_part, axes = (1,2)).real  # [nt-1, nx, ny]
   phi_update = jnp.concatenate([jnp.zeros((1,nx,ny)), F_phi_updates], axis = 0) # [nt, nx, ny]
   return phi_update
 
 
+def set_up_J(egno, ndim, period_spatial):
+  if egno == 1:  # sin
+    if ndim == 1:
+      x_period = period_spatial[0]
+      alpha = 2 * jnp.pi / x_period
+    elif ndim == 2:
+      x_period, y_period = period_spatial
+      alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
+    else:
+      raise ValueError("ndim {} not implemented".format(ndim))
+    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # [...,ndim] -> [...]
+  else:
+    raise ValueError("egno {} not implemented".format(egno))
+  return J
 
-def set_up_example_fns(egno, ndim, period_spatial):
+
+def set_up_example_fns(egno, ndim):
   '''
   @ parameters:
     egno: int
     ndim: int
-    period_spatial: list of length ndim
   @ return:
     J: initial condition, function
     fns_dict: named tuple of functions
   '''
   print('egno: ', egno, flush=True)
-
-  if ndim == 1:
-    x_period = period_spatial[0]
-    alpha = 2 * jnp.pi / x_period
-  else:
-    x_period, y_period = period_spatial[0], period_spatial[1]
-    alpha = jnp.array([2 * jnp.pi / x_period, 2 * jnp.pi / y_period])
-  
-  # NOTE: f_in_H_fn and c_in_H_fn are only used in this function and pdhg1d_m.py and pdhg2d_m.py
-  if egno == 1:
-    # J = lambda x: jnp.sum((x - 1)**2/2, axis = -1)
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 2:
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    f_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0])
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 3:
-    J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # input [...,ndim] output [...]
-    f_in_H_fn = lambda x, t: 1 + 3* jnp.exp(-4 * jnp.sum((x-1) * (x-1), axis = -1))
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  elif egno == 4:
-    J = lambda x: -jnp.sum((x-1)**2, axis=-1)/10
-    if ndim == 1:
-      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t - 0.5)**2/2)
-    elif ndim == 2:
-      f_in_H_fn = lambda x, t: -jnp.minimum(jnp.minimum((x[...,0] - t - 0.5)**2/2, (x[...,0]+x_period - t - 0.5)**2/2), 
-                                          (x[...,0] -x_period - t - 0.5)**2/2) - (x[...,1] - 1)**2/4
-    else:
-      raise ValueError("ndim {} not implemented".format(ndim))
-    c_in_H_fn = lambda x, t: jnp.zeros_like(x[...,0]) + 1
-  else:
-    raise ValueError("egno {} not implemented".format(egno))
-
   # omit the indicator function
   # note: dim of p is [nt-1, nx]
   # H_plus_fn, H_minus_fn, H_fn are only used in this function and compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general, compute_EO_forward_solution_1d_general, compute_EO_forward_solution_2d_general
-  # Hstar_plus_fn, Hstar_minus_fn, Hstar_fn are only used in pdhg_v.py
-  # Hstar_plus_prox_fn, Hstar_minus_prox_fn Hstar_prox_fn (or H_prox_fn) are only used in pdhg_v.py
-  if egno == 2:  # c(x,t)|p|_1 + f(x,t)
-    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) + f_in_H_fn(x_arr, t_arr)/2/ndim
-    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(-p,0) + f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2/ndim # + indicator(p>=0)
-    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.zeros_like(p) -f_in_H_fn(x_arr, t_arr)/2/ndim # + indicator(p<=0)
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(jnp.maximum(p, 0.0), c_in_H_fn(x_arr, t_arr))
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(jnp.minimum(p, 0.0), -c_in_H_fn(x_arr, t_arr))
-  elif egno == 1 or egno == 4:  # c(x,t)|p|^2/2 + f(x,t)
-    H_plus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.maximum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2/ndim
-    H_minus_fn = lambda p, x_arr, t_arr: c_in_H_fn(x_arr, t_arr) * jnp.minimum(p,0) **2/2 + f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p, 0.0) **2/ c_in_H_fn(x_arr, t_arr)/2 - f_in_H_fn(x_arr, t_arr)/2/ndim
-    Hstar_plus_prox_fn = lambda p, param, x_arr, t_arr: jnp.maximum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
-    Hstar_minus_prox_fn = lambda p, param, x_arr, t_arr: jnp.minimum(p / (1+ param /c_in_H_fn(x_arr, t_arr)), 0.0)
-    f_plus_fn = lambda alp, x_arr, t_arr: jnp.maximum(-alp, 0.0)
-    f_minus_fn = lambda alp, x_arr, t_arr: jnp.minimum(-alp, 0.0)
-    L1_fn = lambda alp, x_arr, t_arr: jnp.maximum(-alp, 0.0) **2 / 2
-    L2_fn = lambda alp, x_arr, t_arr: jnp.minimum(-alp, 0.0) **2 / 2
-    def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
-      alp1_prev, alp2_prev = alp_prev
-      eps = 1e-4
-      # param_inv = (rho + eps) / sigma
-      param_inv = 1.0 / sigma
-      alp1_next = (Dx_right_phi + param_inv * alp1_prev) / (1 + param_inv)
-      alp1_next = jnp.minimum(alp1_next, 0.0)
-      alp2_next = (Dx_left_phi + param_inv * alp2_prev) / (1 + param_inv)
-      alp2_next = jnp.maximum(alp2_next, 0.0)
-      return (alp1_next, alp2_next)
-  elif egno == 3:  # scheme for |p|_2 + f(x,t), non-seperable case, the indicator function is omitted
+  if egno == 1:  # f = -alp, L = |alp|^2/2, dim_ctrl = dim_state = ndim
+    # TODO: H_plus and H_minus are used in EO scheme to measure the performance. Any better measure?
+    H_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p,0) **2/2  # [...] -> [...]
+    H_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p,0) **2/2
+    f_fn = lambda alp, x_arr, t_arr: -alp  # [..., ndim] -> [..., ndim]
+    L_fn = lambda alp, x_arr, t_arr: jnp.sum(alp**2, axis = -1)/2  # [..., ndim] -> [...]
     if ndim == 1:
-      H_fn = lambda p, x_arr, t_arr: jnp.sqrt(jnp.minimum(p[0],0)**2 + jnp.maximum(p[1],0)**2) + f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...,ndim] and [...]
-      Hstar_fn = lambda p, x_arr, t_arr: -f_in_H_fn(x_arr, t_arr)  # p is [2,...] (xp,xm), x_arr and t_arr can be broadcasted to [...]
-      def Hstar_prox_fn(p, param, x_arr, t_arr):  # p is [2,...] (xp,xm), others can be broadcast to [...]
-        uxp, uxm = p[0], p[1]
-        uxp = jnp.minimum(uxp, 0)
-        uxm = jnp.maximum(uxm, 0)
-        norm = jnp.sqrt(uxp**2 + uxm**2)
-        norm = jnp.maximum(norm, 1.0)
-        return (uxp/norm, uxm/norm)  # TODO: check this and consistency for 1d case
-    elif ndim == 2:
-      H_fn = lambda p, x_arr, t_arr: jnp.sqrt(jnp.minimum(p[0],0)**2 + jnp.maximum(p[1],0)**2 + jnp.minimum(p[2],0)**2 \
-                            + jnp.maximum(p[3],0)**2) + f_in_H_fn(x_arr, t_arr)  # p is [4,...] (xp,xm,yp,ym), x_arr and t_arr can be broadcasted to [...,ndim] and [...]
-      Hstar_fn = lambda p, x_arr, t_arr: -f_in_H_fn(x_arr, t_arr)  # p is [4,...] (xp,xm,yp,ym), x_arr and t_arr can be broadcasted to [...]
-      def Hstar_prox_fn(p, param, x_arr, t_arr):  # p is [4,...] (xp,xm,yp,ym), others can be broadcast to [...]
-        uxp, uxm, uyp, uym = p[0], p[1], p[2], p[3]
-        uxp = jnp.minimum(uxp, 0)
-        uxm = jnp.maximum(uxm, 0)
-        uyp = jnp.minimum(uyp, 0)
-        uym = jnp.maximum(uym, 0)
-        norm = jnp.sqrt(uxp**2 + uxm**2 + uyp**2 + uym**2)
-        norm = jnp.maximum(norm, 1.0)
-        return (uxp/norm, uxm/norm, uyp/norm, uym/norm)  # TODO: check this and consistency for 1d case
+      def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
+        alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
+        eps = 1e-4
+        param_inv = (rho + eps) / sigma  # [nt-1, nx]
+        alp1_next = (Dx_right_phi + param_inv * alp1_prev[...,0]) / (1 + param_inv)
+        alp1_next = jnp.minimum(alp1_next, 0.0)[...,None]
+        alp2_next = (Dx_left_phi + param_inv * alp2_prev[...,0]) / (1 + param_inv)
+        alp2_next = jnp.maximum(alp2_next, 0.0)[...,None]
+        return (alp1_next, alp2_next)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
-  if ndim == 1 and egno != 3:  # separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 'L1_fn', 'L2_fn', 'alp_update_fn',
-                                        'H_plus_fn', 'H_minus_fn', 'Hstar_plus_fn', 'Hstar_minus_fn',
-                                        'Hstar_plus_prox_fn', 'Hstar_minus_prox_fn', 'f_plus_fn', 'f_minus_fn'])
-    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
-                        Hstar_plus_fn=Hstar_plus_fn, Hstar_minus_fn=Hstar_minus_fn,
-                        Hstar_plus_prox_fn=Hstar_plus_prox_fn, Hstar_minus_prox_fn=Hstar_minus_prox_fn,
+  if ndim == 1:
+    f_plus_fn = lambda alp, x_arr, t_arr: jnp.maximum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)  # [...,ndim] -> [...]
+    f_minus_fn = lambda alp, x_arr, t_arr: jnp.minimum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)
+    L1_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr)[...,0] >= 0.0)
+    L2_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr)[...,0] < 0.0)
+  else: # TODO
+    f_plus_x_fn = lambda alp, x_arr, t_arr: jnp.maximum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)  # [..., dim_ctrl] -> [...]
+    f_minus_fn = lambda alp, x_arr, t_arr: jnp.minimum(f_fn(alp, x_arr, t_arr), 0.0)
+    L1_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr) >= 0.0)
+    L2_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr) < 0.0)
+  
+  if ndim == 1:
+    Functions = namedtuple('Functions', ['f_plus_fn', 'f_minus_fn', 'L1_fn', 'L2_fn', 'alp_update_fn',
+                                        'H_plus_fn', 'H_minus_fn'])
+    fns_dict = Functions(H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
                         f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn, L1_fn=L1_fn, L2_fn=L2_fn,
                         alp_update_fn = alp_update_fn)
-  elif ndim == 2 and egno != 3:  # separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn',
-                                        'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn',
-                                        'Hxstar_plus_fn', 'Hxstar_minus_fn', 'Hystar_plus_fn', 'Hystar_minus_fn',
-                                        'Hxstar_plus_prox_fn', 'Hxstar_minus_prox_fn', 'Hystar_plus_prox_fn', 'Hystar_minus_prox_fn'])
-    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        Hx_plus_fn=H_plus_fn, Hx_minus_fn=H_minus_fn, Hy_plus_fn=H_plus_fn, Hy_minus_fn=H_minus_fn,
-                        Hxstar_plus_fn=Hstar_plus_fn, Hxstar_minus_fn=Hstar_minus_fn,
-                        Hystar_plus_fn=Hstar_plus_fn, Hystar_minus_fn=Hstar_minus_fn,
-                        Hxstar_plus_prox_fn=Hstar_plus_prox_fn, Hxstar_minus_prox_fn=Hstar_minus_prox_fn,
-                        Hystar_plus_prox_fn=Hstar_plus_prox_fn, Hystar_minus_prox_fn=Hstar_minus_prox_fn)
-  elif egno == 3:  # non-separable case
-    Functions = namedtuple('Functions', ['f_in_H_fn', 'c_in_H_fn', 'H_fn', 'Hstar_fn', 'Hstar_prox_fn'])
-    fns_dict = Functions(f_in_H_fn=f_in_H_fn, c_in_H_fn=c_in_H_fn, 
-                        H_fn=H_fn, Hstar_fn=Hstar_fn, Hstar_prox_fn=Hstar_prox_fn)
   else:
     raise ValueError("ndim {} not implemented".format(ndim))
-  return J, fns_dict
+  return fns_dict
 
 
 def compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):

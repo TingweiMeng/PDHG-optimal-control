@@ -223,15 +223,9 @@ def Dyy_increasedim(rho, dy):
 
 
 def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
-  alp1, alp2 = alp[0], alp[1]
+  alp1, alp2 = alp
   dx = dspatial[0]
-  if 'Hstar_plus_fn' in fns_dict._fields and 'Hstar_minus_fn' in fns_dict._fields:  # seperable case
-    L_val = fns_dict.L1_fn(alp1, x_arr, t_arr) + fns_dict.L2_fn(alp2, x_arr, t_arr)
-  elif 'Hstar_fn' in fns_dict._fields:  # non-seperable case
-    # L_val = fns_dict.Hstar_fn(jnp.stack([vp, vm], axis = 0), x_arr, t_arr)
-    raise "non-seperable case not implemented yet"
-  else:
-    raise "fns_dict must contain Hstar_fn or Hxstar_plus_fn, Hxstar_minus_fn, Hystar_plus_fn, Hystar_minus_fn"
+  L_val = fns_dict.L1_fn(alp1, x_arr, t_arr) + fns_dict.L2_fn(alp2, x_arr, t_arr)
   f_plus = fns_dict.f_plus_fn(alp1, x_arr, t_arr)
   f_minus = fns_dict.f_minus_fn(alp2, x_arr, t_arr)
   vec = Dx_right_decreasedim(phi, dx) * f_plus + Dx_left_decreasedim(phi, dx) * f_minus
@@ -239,8 +233,23 @@ def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   vec = vec - L_val
   return vec
 
-def compute_cont_residual(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
-  alp1, alp2 = alp[0], alp[1]
+def compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
+  alp1_x, alp2_x, alp1_y, alp2_y = alp
+  dx, dy = dspatial
+  L_val = fns_dict.L1_x_fn(alp1_x, x_arr, t_arr) + fns_dict.L2_x_fn(alp2_x, x_arr, t_arr)
+  L_val = L_val + fns_dict.L1_y_fn(alp1_y, x_arr, t_arr) + fns_dict.L2_y_fn(alp2_y, x_arr, t_arr)
+  f_plus_x = fns_dict.f_plus_x_fn(alp1_x, x_arr, t_arr)
+  f_minus_x = fns_dict.f_minus_x_fn(alp2_x, x_arr, t_arr)
+  f_plus_y = fns_dict.f_plus_y_fn(alp1_y, x_arr, t_arr)
+  f_minus_y = fns_dict.f_minus_y_fn(alp2_y, x_arr, t_arr)
+  vec = Dx_right_decreasedim(phi, dx) * f_plus_x + Dx_left_decreasedim(phi, dx) * f_minus_x
+  vec = vec + Dy_right_decreasedim(phi, dy) * f_plus_y + Dy_left_decreasedim(phi, dy) * f_minus_y
+  vec = - vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
+  vec = vec - L_val
+  return vec
+
+def compute_cont_residual_1d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
+  alp1, alp2 = alp
   dx = dspatial[0]
   eps = 1e-4
   f_plus = fns_dict.f_plus_fn(alp1, x_arr, t_arr)
@@ -248,6 +257,24 @@ def compute_cont_residual(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_ar
   m1 = (rho + eps) * f_plus  # [nt-1, nx]
   m2 = (rho + eps) * f_minus  # [nt-1, nx]
   delta_phi = -Dx_left_increasedim(m1, dx) + -Dx_right_increasedim(m2, dx) \
+              + Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx]
+  delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
+  return delta_phi
+
+def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
+  alp1_x, alp2_x, alp1_y, alp2_y = alp
+  dx, dy = dspatial
+  eps = 1e-4
+  f_plus_x = fns_dict.f_plus_x_fn(alp1_x, x_arr, t_arr)
+  f_minus_x = fns_dict.f_minus_x_fn(alp2_x, x_arr, t_arr)
+  f_plus_y = fns_dict.f_plus_y_fn(alp1_y, x_arr, t_arr)
+  f_minus_y = fns_dict.f_minus_y_fn(alp2_y, x_arr, t_arr)
+  m1_x = (rho + eps) * f_plus_x  # [nt-1, nx, ny]
+  m2_x = (rho + eps) * f_minus_x  # [nt-1, nx, ny]
+  m1_y = (rho + eps) * f_plus_y  # [nt-1, nx, ny]
+  m2_y = (rho + eps) * f_minus_y  # [nt-1, nx, ny]
+  delta_phi = - Dx_left_increasedim(m1_x, dx) - Dx_right_increasedim(m2_x, dx) \
+              - Dy_left_increasedim(m1_y, dy) - Dy_right_increasedim(m2_y, dy) \
               + Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx]
   delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
   return delta_phi
@@ -275,95 +302,89 @@ def update_v_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps
   return alp_next
 
 def update_rho_2d(rho_prev, phi, v, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
-  vxp, vxm = v[0], v[1]
-  vyp, vym = v[2], v[3]
-  dx, dy = dspatial[0], dspatial[1]
-  if 'Hxstar_plus_fn' in fns_dict._fields and 'Hxstar_minus_fn' in fns_dict._fields and \
-     'Hystar_plus_fn' in fns_dict._fields and 'Hystar_minus_fn' in fns_dict._fields:  # seperable case
-    Hstar_val = fns_dict.Hxstar_plus_fn(vxm, x_arr, t_arr) + fns_dict.Hxstar_minus_fn(vxp, x_arr, t_arr) \
-                + fns_dict.Hystar_plus_fn(vym, x_arr, t_arr) + fns_dict.Hystar_minus_fn(vyp, x_arr, t_arr)
-  elif 'Hstar_fn' in fns_dict._fields:  # non-seperable case
-    Hstar_val = fns_dict.Hstar_fn(jnp.stack([vxp, vxm, vyp, vym], axis = 0), x_arr, t_arr)
-  else:
-    raise "fns_dict must contain Hstar_fn or Hxstar_plus_fn, Hxstar_minus_fn, Hystar_plus_fn, Hystar_minus_fn"
-  vec = Dx_right_decreasedim(phi, dx) * vxp + Dx_left_decreasedim(phi, dx) * vxm
-  vec = vec + Dy_right_decreasedim(phi, dy) * vyp + Dy_left_decreasedim(phi, dy) * vym
-  vec = vec + Dt_decreasedim(phi,dt) - epsl * Dxx_decreasedim(phi, dx) - epsl * Dyy_decreasedim(phi, dy)  # [nt-1, nx, ny]
-  vec = vec - Hstar_val
+  vec = compute_HJ_residual_2d(phi, v, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   rho_next = rho_prev + sigma * vec
-  rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx, ny]
+  rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
-def update_v_2d_seperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
+def update_v_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
   '''
   @ parameters:
     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
-    and output argmin_u H(u) + |x-u|^2/(2t), assuming H(p1, p2) = Hx(p1) + Hy(p2)
+    and output argmin_u H(u) + |x-u|^2/(2t)
   '''
-  vxp_prev, vxm_prev, vyp_prev, vym_prev = v_prev[0], v_prev[1], v_prev[2], v_prev[3]
-  dx, dy = dspatial[0], dspatial[1]
-  Hxstar_plus_prox_fn = fns_dict.Hxstar_plus_prox_fn
-  Hxstar_minus_prox_fn = fns_dict.Hxstar_minus_prox_fn
-  Hystar_plus_prox_fn = fns_dict.Hystar_plus_prox_fn
-  Hystar_minus_prox_fn = fns_dict.Hystar_minus_prox_fn
-  param = sigma / (rho + eps)
-  vxp_next_raw = vxp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
-  vxm_next_raw = vxm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
-  vyp_next_raw = vyp_prev + param * Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
-  vym_next_raw = vym_prev + param * Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
-  vxp_next = Hxstar_minus_prox_fn(vxp_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]
-  vxm_next = Hxstar_plus_prox_fn(vxm_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]  
-  vyp_next = Hystar_minus_prox_fn(vyp_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]
-  vym_next = Hystar_plus_prox_fn(vym_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]  
-  return (vxp_next, vxm_next, vyp_next, vym_next)
-
-
-def update_v_2d_nonseperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
-  '''
-  @ parameters:
-    Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
-    and output argmin_u H(u) + |x-u|^2/(2t), assume H is general
-  '''
-  vxp_prev, vxm_prev, vyp_prev, vym_prev = v_prev[0], v_prev[1], v_prev[2], v_prev[3]
-  dx, dy = dspatial[0], dspatial[1]
-  param = sigma / (rho + eps)
-  vxp_next_raw = vxp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
-  vxm_next_raw = vxm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
-  vyp_next_raw = vyp_prev + param * Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
-  vym_next_raw = vym_prev + param * Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
-  v_next_raw = jnp.stack([vxp_next_raw, vxm_next_raw, vyp_next_raw, vym_next_raw], axis = 0)  # [4, nt-1, nx, ny]
-  if 'Hstar_prox_fn' in fns_dict._fields:
-    v_next = fns_dict.Hstar_prox_fn(v_next_raw, 1/param, x_arr, t_arr)  # [4, nt-1, nx, ny]
-  elif 'H_prox_fn' in fns_dict._fields:
-    p_next = fns_dict.H_prox_fn(v_next_raw/param, param, x_arr, t_arr)  # [4, nt-1, nx, ny]
-    v_next = v_next_raw - param * p_next  # [4, nt-1, nx, ny]
+  dx, dy = dspatial
+  Dx_right_phi = Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
+  Dx_left_phi = Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
+  Dy_right_phi = Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
+  Dy_left_phi = Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
+  if 'alp_update_fn' in fns_dict._fields:
+    alp_next = fns_dict.alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, Dy_right_phi, Dy_left_phi, rho, sigma, x_arr, t_arr)
   else:
     raise NotImplementedError
-  return v_next
+  return alp_next
+
+
+# def update_v_2d_seperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
+#   '''
+#   @ parameters:
+#     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
+#     and output argmin_u H(u) + |x-u|^2/(2t), assuming H(p1, p2) = Hx(p1) + Hy(p2)
+#   '''
+#   vxp_prev, vxm_prev, vyp_prev, vym_prev = v_prev[0], v_prev[1], v_prev[2], v_prev[3]
+#   dx, dy = dspatial[0], dspatial[1]
+#   Hxstar_plus_prox_fn = fns_dict.Hxstar_plus_prox_fn
+#   Hxstar_minus_prox_fn = fns_dict.Hxstar_minus_prox_fn
+#   Hystar_plus_prox_fn = fns_dict.Hystar_plus_prox_fn
+#   Hystar_minus_prox_fn = fns_dict.Hystar_minus_prox_fn
+#   param = sigma / (rho + eps)
+#   vxp_next_raw = vxp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
+#   vxm_next_raw = vxm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
+#   vyp_next_raw = vyp_prev + param * Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
+#   vym_next_raw = vym_prev + param * Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
+#   vxp_next = Hxstar_minus_prox_fn(vxp_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]
+#   vxm_next = Hxstar_plus_prox_fn(vxm_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]  
+#   vyp_next = Hystar_minus_prox_fn(vyp_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]
+#   vym_next = Hystar_plus_prox_fn(vym_next_raw, param, x_arr, t_arr)  # [nt-1, nx, ny]  
+#   return (vxp_next, vxm_next, vyp_next, vym_next)
+
+
+# def update_v_2d_nonseperable(v_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
+#   '''
+#   @ parameters:
+#     Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
+#     and output argmin_u H(u) + |x-u|^2/(2t), assume H is general
+#   '''
+#   vxp_prev, vxm_prev, vyp_prev, vym_prev = v_prev[0], v_prev[1], v_prev[2], v_prev[3]
+#   dx, dy = dspatial[0], dspatial[1]
+#   param = sigma / (rho + eps)
+#   vxp_next_raw = vxp_prev + param * Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
+#   vxm_next_raw = vxm_prev + param * Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
+#   vyp_next_raw = vyp_prev + param * Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
+#   vym_next_raw = vym_prev + param * Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
+#   v_next_raw = jnp.stack([vxp_next_raw, vxm_next_raw, vyp_next_raw, vym_next_raw], axis = 0)  # [4, nt-1, nx, ny]
+#   if 'Hstar_prox_fn' in fns_dict._fields:
+#     v_next = fns_dict.Hstar_prox_fn(v_next_raw, 1/param, x_arr, t_arr)  # [4, nt-1, nx, ny]
+#   elif 'H_prox_fn' in fns_dict._fields:
+#     p_next = fns_dict.H_prox_fn(v_next_raw/param, param, x_arr, t_arr)  # [4, nt-1, nx, ny]
+#     v_next = v_next_raw - param * p_next  # [4, nt-1, nx, ny]
+#   else:
+#     raise NotImplementedError
+#   return v_next
 
 
 @partial(jax.jit, static_argnames=("fns_dict",))
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
-  delta_phi = compute_cont_residual(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
+  delta_phi = compute_cont_residual_1d(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
   C = 1.0
-  phi_next = phi_prev + tau * solver.Poisson_eqt_solver(delta_phi, fv, dt, C = C)
+  phi_next = phi_prev + tau * solver.Poisson_eqt_solver_1d(delta_phi, fv, dt, C = C)
   return phi_next
 
-@jax.jit
-def update_primal_2d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fv, epsl):
-  vxp_prev, vxm_prev, vyp_prev, vym_prev = v_prev[0], v_prev[1], v_prev[2], v_prev[3]
-  dx, dy = dspatial[0], dspatial[1]
-  eps = 1e-4
-  mxp_prev = (rho_prev + eps) * vxp_prev  # [nt-1, nx]
-  mxm_prev = (rho_prev + eps) * vxm_prev  # [nt-1, nx]
-  myp_prev = (rho_prev + eps) * vyp_prev  # [nt-1, nx]
-  mym_prev = (rho_prev + eps) * vym_prev  # [nt-1, nx]
-  delta_phi = Dx_left_increasedim(mxp_prev, dx) + Dx_right_increasedim(mxm_prev, dx) \
-              + Dy_left_increasedim(myp_prev, dy) + Dy_right_increasedim(mym_prev, dy) \
-              + Dt_increasedim(rho_prev,dt) + epsl * Dxx_increasedim(rho_prev,dx) \
-              + epsl * Dyy_increasedim(rho_prev,dy)  # [nt, nx]
-  delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
-  phi_next = phi_prev - tau * solver.Poisson_eqt_solver_2d(delta_phi, fv, dt)
+@partial(jax.jit, static_argnames=("fns_dict",))
+def update_primal_2d(phi_prev, rho_prev, c_on_rho, v_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
+  delta_phi = compute_cont_residual_2d(rho_prev, v_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
+  C = 1.0
+  phi_next = phi_prev + tau * solver.Poisson_eqt_solver_2d(delta_phi, fv, dt, C = C)
   return phi_next
 
 
@@ -373,14 +394,15 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, v_prev, sigma, dt, dspatial
     update_v = update_v_1d
     update_rho = update_rho_1d
   elif ndim == 2:
-    if 'Hxstar_plus_prox_fn' in fns_dict._fields and 'Hxstar_minus_prox_fn' in fns_dict._fields and \
-       'Hystar_plus_prox_fn' in fns_dict._fields and 'Hystar_minus_prox_fn' in fns_dict._fields:
-      update_v = update_v_2d_seperable
-    elif ('Hstar_prox_fn' in fns_dict._fields) or ('H_prox_fn' in fns_dict._fields):
-      update_v = update_v_2d_nonseperable
-    else:
-      print(fns_dict)
-      raise "fns_dict must contain Hstar_prox_fn or H_prox_fn or Hxstar_plus_prox_fn, Hxstar_minus_prox_fn, Hystar_plus_prox_fn, Hystar_minus_prox_fn"
+    update_v = update_v_2d
+    # if 'Hxstar_plus_prox_fn' in fns_dict._fields and 'Hxstar_minus_prox_fn' in fns_dict._fields and \
+    #    'Hystar_plus_prox_fn' in fns_dict._fields and 'Hystar_minus_prox_fn' in fns_dict._fields:
+    #   update_v = update_v_2d_seperable
+    # elif ('Hstar_prox_fn' in fns_dict._fields) or ('H_prox_fn' in fns_dict._fields):
+    #   update_v = update_v_2d_nonseperable
+    # else:
+    #   print(fns_dict)
+    #   raise "fns_dict must contain Hstar_prox_fn or H_prox_fn or Hxstar_plus_prox_fn, Hxstar_minus_prox_fn, Hystar_plus_prox_fn, Hystar_minus_prox_fn"
     update_rho = update_rho_2d
   else:
     raise NotImplementedError
