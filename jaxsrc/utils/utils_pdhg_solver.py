@@ -165,7 +165,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
         else:
           phi_all.append(phi_curr)
         rho_all.append(rho_curr)
-        alp_all.append(jnp.stack(alp_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, dim_ctrl, 4] for 2d and [time_step_per_PDHG-1, nx, dim_ctrl, 2] for 1d
+        alp_all.append(jnp.stack(alp_curr, axis = 0))  # [4, time_step_per_PDHG-1, nx, ny, dim_ctrl] for 2d and [2, time_step_per_PDHG-1, nx, dim_ctrl] for 1d
         errs_all.append(errs)
         # set initial values for next time block
         g_diff = phi_curr[-1:,...] - phi0[0:1,...]
