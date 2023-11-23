@@ -1,7 +1,10 @@
+# TODO: this code is outdated, need to update
+
 import jax.numpy as jnp
 from absl import app, flags
 import os
-from solver import set_up_example_fns, compute_xarr, compute_ground_truth, compute_err_1d, compute_err_2d
+from set_fns import set_up_example_fns
+from solver import compute_xarr, compute_ground_truth, compute_err_1d, compute_err_2d
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
 from solver import read_solution, read_raw_file, save_raw
 import plot_soln

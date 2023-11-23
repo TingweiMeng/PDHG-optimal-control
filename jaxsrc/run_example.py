@@ -1,9 +1,9 @@
 import jax.numpy as jnp
 from absl import app, flags, logging
-from solver import set_up_example_fns, set_up_J
+from set_fns import set_up_example_fns, set_up_J
 import pytz
 from datetime import datetime
-from pdhg_solver import PDHG_multi_step
+from utils.utils_pdhg_solver import PDHG_multi_step
 from solver import save
 import utils_pdhg
 from utils.utils_precond import compute_Dxx_fft_fv

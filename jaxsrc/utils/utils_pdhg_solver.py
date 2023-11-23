@@ -1,9 +1,6 @@
-import jax
 import jax.numpy as jnp
 import utils.utils as utils
 from einshape import jax_einshape as einshape
-from utils.utils_precond import compute_Dxx_fft_fv
-import matplotlib.pyplot as plt
 
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 

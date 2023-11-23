@@ -418,7 +418,7 @@ def update_dual(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl
                    rho_alp_iters=10, eps=1e-7):
   '''
   @ parameters:
-  fns_dict: dict of functions, see the function set_up_example_fns in solver.py
+  fns_dict: dict of functions, see the function set_up_example_fns in set_fns.py
   '''
   for j in range(rho_alp_iters):
     rho_next, alp_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl,
