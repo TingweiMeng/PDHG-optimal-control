@@ -32,9 +32,9 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
     eps: scalar, stopping criterion
     stepsz_param: scalar, step size parameter
     fv: [nx] for 1d, [nx, ny] for 2d, FFT of Laplacian operator, or None if do not use preconditioning
-  @ returns:  #TODO: remove None in results_all
-    results_all: list of tuples, each tuple is (iter, alp_next, rho_next, None, phi_next)
-    error_all: [N_maxiter, 3], primal error, dual error, equation error
+  @ returns:
+    results_all: list of tuples, each tuple is (iter, phi_next, rho_next, alp_next)
+    error_all: [N_maxiter//print_freq, 3], primal error, dual error, equation error
   '''
   phi_prev = phi0
   rho_prev = rho0
@@ -64,7 +64,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
     err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
     
     error = jnp.array([err1, err2, err3])
-    error_all.append(error)
     if error[2] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
@@ -72,15 +71,16 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
       print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
-      results_all.append((i, alp_next, rho_prev, [], phi_prev))
+      results_all.append((i, phi_prev, rho_prev, alp_next))
+      error_all.append(error)
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
-    rho_prev = rho_next
     phi_prev = phi_next
+    rho_prev = rho_next
     alp_prev = alp_next
   # print the final error
   print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
-  results_all.append((i+1, alp_next, rho_next, None, phi_next))
+  results_all.append((i+1, phi_next, rho_next, alp_next))
   return results_all, jnp.array(error_all)
 
 
@@ -99,8 +99,8 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
     n_ctrl: int, number of control variables
     N_maxiter, print_freq, eps: see PDHG_solver_oneiter
   @ returns:
-    results_out: list of tuples, each tuple is (iter, alp_next, rho_next, None, phi_next)
-    error_all: [N_maxiter, 3], primal error, dual error, equation error
+    results_out: list of tuples, each tuple is (iter, phi_next, rho_next, alp_next)
+    error_all: [N_maxiter//print_freq, 3], primal error, dual error, equation error
   '''
   if n_ctrl is None:
     n_ctrl = ndim
@@ -128,6 +128,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   phi_all = []
   rho_all = []
   alp_all = []
+  errs_all = []
   
   stepsz_param_min = stepsz_param / 10
   stepsz_param_delta = stepsz_param / 10
@@ -159,15 +160,17 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
           break
       else:  # if not nan, compute max error and iters, save results, and go to next time block
         max_err = jnp.maximum(max_err, errs[-1][-1])
-        pdhg_iters, alp_curr, rho_curr, _, phi_curr = results_all[-1]
+        pdhg_iters, phi_curr, rho_curr, alp_curr = results_all[-1]
         max_iters = jnp.maximum(max_iters, pdhg_iters)
         # save results
         if i < nt_PDHG-1:  # if not the last time block, exclude the last time step
           phi_all.append(phi_curr[:-1,:])
         else:
           phi_all.append(phi_curr)
-        alp_all.append(jnp.stack(alp_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, dim_ctrl, 4] for 2d and [time_step_per_PDHG-1, nx, dim_ctrl, 2] for 1d
         rho_all.append(rho_curr)
+        alp_all.append(jnp.stack(alp_curr, axis = -1))  # [time_step_per_PDHG-1, nx, ny, dim_ctrl, 4] for 2d and [time_step_per_PDHG-1, nx, dim_ctrl, 2] for 1d
+        errs_all.append(errs)
+        # set initial values for next time block
         g_diff = phi_curr[-1:,...] - phi0[0:1,...]
         print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
         phi0 = phi0 + g_diff
@@ -181,7 +184,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   phi_out = jnp.concatenate(phi_all, axis = 0)  # [nt, nx] or [nt, nx, ny]
   rho_out = jnp.concatenate(rho_all, axis = 0)  # [nt-1, nx] or [nt-1, nx, ny]
   alp_out = jnp.concatenate(alp_all, axis = 0)  # [nt-1, nx, ny, dim_ctrl, 4] for 2d and [nt-1, nx, dim_ctrl, 2] for 1d
-  results_out = [(max_iters, alp_out, rho_out, None, phi_out)]
+  results_out = [(max_iters, phi_out, rho_out, alp_out)]
   print('\n\n')
   print('===========================================')
   utils.timer.toc('all_time')
@@ -189,4 +192,4 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
     print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
   else:
     print('pdhg conv. Max err is {:.2E}. Max iters is {}'.format(max_err, max_iters), flush = True)
-  return results_out, None
+  return results_out, errs_all

@@ -327,7 +327,7 @@ def read_solution(filename):
   with open(filename, 'rb') as f:
     results, errors = pickle.load(f)
   # compute errors
-  phi = results[-1][-1]
+  phi = results[-1][1]
   return phi
 
 def read_raw_file(filename):
