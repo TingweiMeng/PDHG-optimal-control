@@ -23,17 +23,29 @@ def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   return vec
 
 def compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
-  alp1_x, alp2_x, alp1_y, alp2_y = alp
+  alp_11, alp_12, alp_21, alp_22 = alp
   dx, dy = dspatial
-  L_val = fns_dict.L1_x_fn(alp1_x, x_arr, t_arr) + fns_dict.L2_x_fn(alp2_x, x_arr, t_arr)
-  L_val = L_val + fns_dict.L1_y_fn(alp1_y, x_arr, t_arr) + fns_dict.L2_y_fn(alp2_y, x_arr, t_arr)
-  f_plus_x = fns_dict.f_plus_x_fn(alp1_x, x_arr, t_arr)
-  f_minus_x = fns_dict.f_minus_x_fn(alp2_x, x_arr, t_arr)
-  f_plus_y = fns_dict.f_plus_y_fn(alp1_y, x_arr, t_arr)
-  f_minus_y = fns_dict.f_minus_y_fn(alp2_y, x_arr, t_arr)
-  vec = Dx_right_decreasedim(phi, dx) * f_plus_x + Dx_left_decreasedim(phi, dx) * f_minus_x
-  vec = vec + Dy_right_decreasedim(phi, dy) * f_plus_y + Dy_left_decreasedim(phi, dy) * f_minus_y
-  vec = - vec + Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
+  ind_11 = fns_dict.indicator_11_fn(alp_11, x_arr, t_arr)
+  ind_12 = fns_dict.indicator_12_fn(alp_12, x_arr, t_arr)
+  ind_21 = fns_dict.indicator_21_fn(alp_21, x_arr, t_arr)
+  ind_22 = fns_dict.indicator_22_fn(alp_22, x_arr, t_arr)
+  L_val = fns_dict.L_fn(alp_11, x_arr, t_arr) * ind_11 + fns_dict.L_fn(alp_12, x_arr, t_arr) * ind_12 \
+          + fns_dict.L_fn(alp_21, x_arr, t_arr) * ind_21 + fns_dict.L_fn(alp_22, x_arr, t_arr) * ind_22  # [nt-1, nx, ny]
+  Dx_right_phi = Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
+  Dx_left_phi = Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
+  Dy_right_phi = Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
+  Dy_left_phi = Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
+  # in Dphi, 1 for right, 2 for left
+  D11_phi = jnp.stack([Dx_right_phi, Dy_right_phi], axis = -1) # [nt-1, nx, ny, 2]
+  D12_phi = jnp.stack([Dx_right_phi, Dy_left_phi], axis = -1)
+  D21_phi = jnp.stack([Dx_left_phi, Dy_right_phi], axis = -1)
+  D22_phi = jnp.stack([Dx_left_phi, Dy_left_phi], axis = -1)
+  f11 = fns_dict.f_fn(alp_11, x_arr, t_arr) * ind_11[...,None]  # [nt-1, nx, ny, 2]
+  f12 = fns_dict.f_fn(alp_12, x_arr, t_arr) * ind_12[...,None]
+  f21 = fns_dict.f_fn(alp_21, x_arr, t_arr) * ind_21[...,None]
+  f22 = fns_dict.f_fn(alp_22, x_arr, t_arr) * ind_22[...,None]
+  vec = Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx, ny]
+  vec -= jnp.sum(D11_phi * f11 + D12_phi * f12 + D21_phi * f21 + D22_phi * f22, axis = -1)
   vec = vec - L_val
   return vec
 
@@ -51,20 +63,24 @@ def compute_cont_residual_1d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
   return delta_phi
 
 def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
-  alp1_x, alp2_x, alp1_y, alp2_y = alp
+  alp_11, alp_12, alp_21, alp_22 = alp
   dx, dy = dspatial
   eps = 1e-4
-  f_plus_x = fns_dict.f_plus_x_fn(alp1_x, x_arr, t_arr)
-  f_minus_x = fns_dict.f_minus_x_fn(alp2_x, x_arr, t_arr)
-  f_plus_y = fns_dict.f_plus_y_fn(alp1_y, x_arr, t_arr)
-  f_minus_y = fns_dict.f_minus_y_fn(alp2_y, x_arr, t_arr)
-  m1_x = (rho + eps) * f_plus_x  # [nt-1, nx, ny]
-  m2_x = (rho + eps) * f_minus_x  # [nt-1, nx, ny]
-  m1_y = (rho + eps) * f_plus_y  # [nt-1, nx, ny]
-  m2_y = (rho + eps) * f_minus_y  # [nt-1, nx, ny]
-  delta_phi = - Dx_left_increasedim(m1_x, dx) - Dx_right_increasedim(m2_x, dx) \
-              - Dy_left_increasedim(m1_y, dy) - Dy_right_increasedim(m2_y, dy) \
-              + Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx]
+  ind_11 = fns_dict.indicator_11_fn(alp_11, x_arr, t_arr)
+  ind_12 = fns_dict.indicator_12_fn(alp_12, x_arr, t_arr)
+  ind_21 = fns_dict.indicator_21_fn(alp_21, x_arr, t_arr)
+  ind_22 = fns_dict.indicator_22_fn(alp_22, x_arr, t_arr)
+  f11 = fns_dict.f_fn(alp_11, x_arr, t_arr) * ind_11[...,None]  # [nt-1, nx, ny, 2]
+  f12 = fns_dict.f_fn(alp_12, x_arr, t_arr) * ind_12[...,None]
+  f21 = fns_dict.f_fn(alp_21, x_arr, t_arr) * ind_21[...,None]
+  f22 = fns_dict.f_fn(alp_22, x_arr, t_arr) * ind_22[...,None]
+  Dx_left_coeff = f11[...,0] + f12[...,0]  # [nt-1, nx, ny], velocity for Dx_left(v*rho)
+  Dx_right_coeff = f21[...,0] + f22[...,0]
+  Dy_left_coeff = f11[...,1] + f21[...,1]
+  Dy_right_coeff = f12[...,1] + f22[...,1]
+  delta_phi = Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx, ny]
+  delta_phi -= Dx_left_increasedim(Dx_left_coeff * (rho + eps), dx) + Dx_right_increasedim(Dx_right_coeff * (rho + eps), dx) \
+              + Dy_left_increasedim(Dy_left_coeff * (rho + eps), dy) + Dy_right_increasedim(Dy_right_coeff * (rho + eps), dy)
   delta_phi = jnp.concatenate([delta_phi[:-1,...], delta_phi[-1:,...] + c_on_rho/dt], axis = 0)
   return delta_phi
 
@@ -76,11 +92,6 @@ def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   return rho_next
 
 def update_alp_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
-  '''
-  @ parameters:
-    Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
-    and output argmin_u H(u) + |x-u|^2/(2t)
-  '''
   dx = dspatial[0]
   Dx_right_phi = Dx_right_decreasedim(phi, dx)  # [nt-1, nx]
   Dx_left_phi = Dx_left_decreasedim(phi, dx)  # [nt-1, nx]
@@ -97,22 +108,22 @@ def update_rho_2d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr
   return rho_next
 
 def update_alp_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, eps=1e-4):
-  '''
-  @ parameters:
-    Hstar_plus_prox_fn and Hstar_minus_prox_fn are prox point operator taking (x,t) as input
-    and output argmin_u H(u) + |x-u|^2/(2t)
-  '''
   dx, dy = dspatial
   Dx_right_phi = Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
   Dx_left_phi = Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
   Dy_right_phi = Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
   Dy_left_phi = Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
+  # in Dphi, 1 for right, 2 for left
+  D11_phi = jnp.stack([Dx_right_phi, Dy_right_phi], axis = -1) # [nt-1, nx, ny, 2]
+  D12_phi = jnp.stack([Dx_right_phi, Dy_left_phi], axis = -1)
+  D21_phi = jnp.stack([Dx_left_phi, Dy_right_phi], axis = -1)
+  D22_phi = jnp.stack([Dx_left_phi, Dy_left_phi], axis = -1)
+  Dphi = (D11_phi, D12_phi, D21_phi, D22_phi)
   if 'alp_update_fn' in fns_dict._fields:
-    alp_next = fns_dict.alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, Dy_right_phi, Dy_left_phi, rho, sigma, x_arr, t_arr)
+    alp_next = fns_dict.alp_update_fn(alp_prev, Dphi, rho, sigma, x_arr, t_arr)
   else:
     raise NotImplementedError
   return alp_next
-
 
 @partial(jax.jit, static_argnames=("fns_dict",))
 def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
