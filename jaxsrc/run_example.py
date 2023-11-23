@@ -30,9 +30,9 @@ def main(argv):
   T = FLAGS.T
 
   if ndim == 1:
-    prob_name = 'eg{}_nt{}_nx{}_epsl{:.2f}_c{}'.format(egno, nt, nx, epsl, c_on_rho)
+    prob_name = 'eg{}_nt{}_nx{}_epsl{:.2f}_c{}'.format(egno, nt, nx, epsl, int(c_on_rho))
   elif ndim == 2:
-    prob_name = 'eg{}_nt{}_nx{}_ny{}_epsl{:.2f}_c{}'.format(egno, nt, nx, ny, epsl, c_on_rho)
+    prob_name = 'eg{}_nt{}_nx{}_ny{}_epsl{:.2f}_c{}'.format(egno, nt, nx, ny, epsl, int(c_on_rho))
   else:
     raise NotImplementedError
 
@@ -40,7 +40,7 @@ def main(argv):
     time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
     stamp = time_stamp
     results_dir = f'./tf_save/{prob_name}/'+ stamp
-    print("tf foldername: ', results_dir")
+    print("tf foldername: ", results_dir)
     file_writer = tf.summary.create_file_writer(results_dir)
     file_writer.set_as_default()
 
