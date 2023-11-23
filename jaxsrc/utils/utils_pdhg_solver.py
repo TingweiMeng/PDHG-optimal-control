@@ -1,6 +1,7 @@
 import jax.numpy as jnp
 import utils.utils as utils
 from einshape import jax_einshape as einshape
+import matplotlib.pyplot as plt
 
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
@@ -79,7 +80,22 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
   print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
   results_all.append((i+1, phi_next, rho_next, alp_next))
   error_all.append(error)
-  return results_all, jnp.array(error_all)
+  error_all = jnp.array(error_all)
+  # plot pdhg errors for debugging [TODO: remove this]
+  plt.figure()
+  # create subfigs
+  plt.subplot(1, 3, 1)
+  plt.plot(error_all[:,0])
+  plt.title('primal error')
+  plt.subplot(1, 3, 2)
+  plt.plot(error_all[:,1])
+  plt.title('dual error')
+  plt.subplot(1, 3, 3)
+  plt.plot(error_all[:,2])
+  plt.title('equation error')
+  plt.savefig('pdhg_errors.png')
+  plt.close()
+  return results_all, error_all
 
 
 def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, g, x_arr, 
