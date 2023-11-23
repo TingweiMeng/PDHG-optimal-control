@@ -78,6 +78,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
   # print the final error
   print('iteration {}, primal error with prev step {:.2E}, dual error with prev step {:.2E}, eqt error {:.2E}'.format(i, error[0],  error[1],  error[2]), flush = True)
   results_all.append((i+1, phi_next, rho_next, alp_next))
+  error_all.append(error)
   return results_all, jnp.array(error_all)
 
 
