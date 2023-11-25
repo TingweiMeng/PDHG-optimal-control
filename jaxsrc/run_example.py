@@ -138,7 +138,7 @@ def main(argv):
       tf.summary.image(alp_titles[i] + '_x', fig_alp, step = 0)
       if ndim == 2:
         fig_alp = plot_fn(alp[i,...,1], x_arr, t_arr[:-1,...], title = alp_titles[i] + ', y-coordinate', tfboard = True)
-      tf.summary.image(alp_titles[i] + '_y', fig_alp, step = 0)
+        tf.summary.image(alp_titles[i] + '_y', fig_alp, step = 0)
   
   print('phi: ', phi)
 
