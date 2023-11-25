@@ -141,10 +141,9 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   sol_nan = False
   max_err, max_iters = 0.0, 0
   
-  utils.timer.tic('all_time')
   tfrecord_ind = 0
+  utils.timer.tic("time estimate")  
   for i in range(nt_PDHG):
-    utils.timer.tic('time_block_{}'.format(i))
     print('=================== nt_PDHG = {}, i = {} ==================='.format(nt_PDHG, i), flush=True)
     t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:]  # [time_step_per_PDHG-1]
     if ndim == 1:
@@ -158,7 +157,8 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
                                     epsl = epsl, stepsz_param=stepsz_param, fv=fv,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, 
                                     tfboard = tfboard, tfrecord_ind = tfrecord_ind)
-      tfrecord_ind += results_all[-1][0]
+      pdhg_iters = results_all[-1][0]
+      tfrecord_ind += pdhg_iters
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:  # if nan, decrease step size
           stepsz_param -= stepsz_param_delta
@@ -169,7 +169,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
           break
       else:  # if not nan, compute max error and iters, save results, and go to next time block
         max_err = jnp.maximum(max_err, errs[-1][-1])
-        pdhg_iters, phi_curr, rho_curr, alp_curr = results_all[-1]
+        _, phi_curr, rho_curr, alp_curr = results_all[-1]
         max_iters = jnp.maximum(max_iters, pdhg_iters)
         # save results
         if i < nt_PDHG-1:  # if not the last time block, exclude the last time step
@@ -186,8 +186,10 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
         rho0 = rho_curr
         alp0 = alp_curr
         break
-    utils.timer.toc('time_block_{}'.format(i))
-    utils.timer.toc('all_time')
+    ratio = i / nt_PDHG
+    samples_processed = pdhg_iters
+    utils.timer.estimate_time("time estimate", ratio, samples_processed)
+      
     if sol_nan:
       break
   phi_out = jnp.concatenate(phi_all, axis = 0)  # [nt, nx] or [nt, nx, ny]
@@ -196,7 +198,6 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   results_out = [(max_iters, phi_out, rho_out, alp_out)]
   print('\n\n')
   print('===========================================')
-  utils.timer.toc('all_time')
   if sol_nan:
     print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
   else:
