@@ -55,8 +55,8 @@ def compute_Dxx_fft_fv(ndim, nspatial, dspatial):
     raise NotImplementedError
   return fv
 
-def H1_precond_1d(source_term, fv, dt, C = 1.0, pow = 1):
-  ''' this solves (C - D_{xx})^pow * phi_update - D_{tt} phi_update = source_term
+def H1_precond_1d(source_term, fv, dt, C = 1.0, pow = 1, Ct = 1):
+  ''' this solves (C - D_{xx})^pow * phi_update - Ct * D_{tt} phi_update = source_term
   tc is a mixed Neumann-Dirichlet boundary condition (we tested this does not influence much)
   ic is Dirichlet boundary condition zero (this is related to problem nature)
   @parameters:
@@ -70,10 +70,10 @@ def H1_precond_1d(source_term, fv, dt, C = 1.0, pow = 1):
   nt, nx = jnp.shape(source_term)
   # exclude the first row wrt t
   v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
-  dl = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
-  du = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
+  dl = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128) * Ct
+  du = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128) * Ct
   Lap_t_diag = -jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
-  Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx)  # [nt-1, nx]
+  Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx) * Ct  # [nt-1, nx]
   thomas_b = einshape('n->mn', -fv, m = nt-1) + C # [nt-1, nx]
   thomas_b = thomas_b ** pow
   phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b + Lap_t_diag_rep, du, v_Fourier) # [nt-1, nx]
