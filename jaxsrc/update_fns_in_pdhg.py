@@ -126,11 +126,10 @@ def update_alp_2d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, e
   return alp_next
 
 @partial(jax.jit, static_argnames=("fns_dict",))
-def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr):
+def update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, 
+                     C = 1.0, pow = 1, Ct = 1):
   delta_phi = compute_cont_residual_1d(rho_prev, alp_prev, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr)
-  C = 0.0
-  pow = 0.5
-  phi_next = phi_prev + tau * H1_precond_1d(delta_phi, fv, dt, C = C, pow = pow)
+  phi_next = phi_prev + tau * H1_precond_1d(delta_phi, fv, dt, C = C, pow = pow, Ct = Ct)
   return phi_next
 
 @partial(jax.jit, static_argnames=("fns_dict",))

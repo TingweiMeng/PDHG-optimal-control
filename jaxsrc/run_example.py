@@ -86,7 +86,9 @@ def main(argv):
   print('shape of g: ', g.shape)
 
   if ndim == 1:
-    fn_update_primal = pdhg.update_primal_1d
+    fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
+      pdhg.update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, 
+                            C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
     def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
       HJ_residual = solver.compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
       return jnp.mean(jnp.abs(HJ_residual))
@@ -165,5 +167,9 @@ if __name__ == '__main__':
 
   flags.DEFINE_boolean('ifsave', True, 'if save to pickle')
   flags.DEFINE_boolean('tfboard', False, 'if use tfboard')
+
+  flags.DEFINE_float('C', 1.0, 'constant in preconditioning')
+  flags.DEFINE_float('pow', 1.0, 'power in preconditioning')
+  flags.DEFINE_float('Ct', 1.0, 'constant in preconditioning')
   
   app.run(main)
