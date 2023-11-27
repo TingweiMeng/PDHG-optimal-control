@@ -81,6 +81,31 @@ def set_up_example_fns(egno, ndim):
       alp2_next = (Dx_left_phi * coeff_fn(x_arr, t_arr) + param_inv * alp2_prev) / (1 + param_inv)
       alp2_next = (alp2_next * (f_fn(alp2_next, x_arr, t_arr) < 0.0))
       return (alp1_next, alp2_next)
+  elif egno > 10 and ndim == 1: # same HJ with eg 1-5, but different f and H: set f(alp) = -alp, L(x,alp) = |alp|^2/a(x)^2/2
+    if egno == 12:  # a(x) = |x-1| + 0.1
+      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr[...,0] - 1.0) + 0.1  # [..., ndim] -> [..., 1]
+    elif egno == 13:  # a(x) = |x-1| - 0.1
+      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.1  # [..., ndim] -> [..., 1]
+    elif egno == 14:  # a(x) = |x-1| - 0.5
+      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.5  # [..., ndim] -> [..., 1]
+    elif egno == 15:  # a(x) = |x-1| - 1.0
+      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 1.0  # [..., ndim] -> [..., 1]
+    H_plus_fn = lambda p, x_arr, t_arr: (jnp.maximum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
+    H_minus_fn = lambda p, x_arr, t_arr: (jnp.minimum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
+    f_fn = lambda alp, x_arr, t_arr: -alp  # [..., dim_ctrl] -> [..., dim_state]
+    L_fn = lambda alp, x_arr, t_arr: jnp.sum((alp/coeff_fn(x_arr, t_arr)[...,0])**2, axis = -1)/2  # [..., ndim] -> [...]
+    def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
+      alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
+      eps = 1e-4
+      param_inv = (rho + eps) / sigma
+      param_inv = param_inv[...,None]  # [nt-1, nx, 1]
+      Dx_right_phi = Dx_right_phi[...,None]  # [nt-1, nx, 1]
+      Dx_left_phi = Dx_left_phi[...,None]  # [nt-1, nx, 1]
+      alp1_next = (Dx_right_phi + param_inv * alp1_prev) / (1/coeff_fn(x_arr, t_arr)**2 + param_inv)  # [nt-1, nx, 1]
+      alp1_next = (alp1_next * (f_fn(alp1_next, x_arr, t_arr) >= 0.0))
+      alp2_next = (Dx_left_phi + param_inv * alp2_prev) / (1/coeff_fn(x_arr, t_arr)**2 + param_inv)  # [nt-1, nx, 1]
+      alp2_next = (alp2_next * (f_fn(alp2_next, x_arr, t_arr) < 0.0))
+      return (alp1_next, alp2_next)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
