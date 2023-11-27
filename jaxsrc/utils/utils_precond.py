@@ -70,13 +70,16 @@ def H1_precond_1d(source_term, fv, dt, C = 1.0, pow = 1, Ct = 1):
   nt, nx = jnp.shape(source_term)
   # exclude the first row wrt t
   v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
-  dl = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128) * Ct
-  du = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128) * Ct
-  Lap_t_diag = -jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
-  Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx) * Ct  # [nt-1, nx]
   thomas_b = einshape('n->mn', -fv, m = nt-1) + C # [nt-1, nx]
   thomas_b = thomas_b ** pow
-  phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b + Lap_t_diag_rep, du, v_Fourier) # [nt-1, nx]
+  if Ct != 0:
+    dl = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128) * Ct
+    du = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (0,1), mode = 'constant', constant_values=0.0).astype(jnp.complex128) * Ct
+    Lap_t_diag = -jnp.array([-2/(dt*dt)] * (nt-2) + [-1/(dt*dt)])  # [nt-1]  # Neumann tc
+    Lap_t_diag_rep = einshape('n->nm', Lap_t_diag, m = nx) * Ct  # [nt-1, nx]
+    phi_fouir_part = tridiagonal_solve_batch(dl, thomas_b + Lap_t_diag_rep, du, v_Fourier) # [nt-1, nx]
+  else:
+    phi_fouir_part = v_Fourier / thomas_b
   F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
   phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
   return phi_update
