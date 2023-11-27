@@ -3,6 +3,8 @@ import utils.utils as utils
 from einshape import jax_einshape as einshape
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from utils.utils_diff_op import Dx_right_decreasedim, Dx_left_decreasedim
+import utils.utils as utils
 
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
@@ -79,6 +81,50 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
       error_all.append(error)
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
+      # TODO: for debug!!!
+      HJ_residual = jnp.mean(jnp.abs(rho_next - rho_prev) / tau_rho)
+      # alp1 = a(x) (Dx^+)_-
+      alp1 = (jnp.abs(x_arr[...,0] - 1.0) - 0.1) * jnp.minimum(Dx_right_decreasedim(phi_next, dspatial[0]), 0.0)  # [nt, nx]
+      # alp2 = a(x) (Dx^-)_+
+      alp2 = (jnp.abs(x_arr[...,0] - 1.0) - 0.1) * jnp.maximum(Dx_left_decreasedim(phi_next, dspatial[0]), 0.0)  # [nt, nx]
+      alp1_err = jnp.mean(jnp.abs(alp1 - alp_next[0]))
+      alp2_err = jnp.mean(jnp.abs(alp2 - alp_next[1]))
+      print('HJ_residual: ', HJ_residual, 'alp1_err: ', alp1_err, 'alp2_err: ', alp2_err, flush = True)
+    if i % 100 == 0: # plot alp1_prev vs alp1_next to tfboard
+      # alp1 = a(x) (Dx^+)_-
+      alp1 = (jnp.abs(x_arr[...,0] - 1.0) - 0.1) * jnp.minimum(Dx_right_decreasedim(phi_next, dspatial[0]), 0.0)  # [nt, nx]
+      # alp2 = a(x) (Dx^-)_+
+      alp2 = (jnp.abs(x_arr[...,0] - 1.0) - 0.1) * jnp.maximum(Dx_left_decreasedim(phi_next, dspatial[0]), 0.0)  # [nt, nx]
+
+      fig = plt.figure()
+      plt.plot(alp_prev[0][0,:,0], '-', label = 'alp1_prev')
+      plt.plot(alp_next[0][0,:,0], 'o', label = 'alp1_next')
+      plt.plot(alp1[0,:], '-*', label = 'alp1_true')
+      plt.plot(alp1)
+      plt.legend()
+      plt.title('alp1_prev vs alp1_next')
+      plt.xlabel('x')
+      plt.ylabel('alp1')
+      plt.grid()
+      plt.tight_layout()
+      fig_tf = utils.plot_to_image(fig)
+      tf.summary.image('alp1_prev vs alp1_next', fig_tf, step = tfrecord_ind + i)
+      plt.close(fig)
+
+      fig = plt.figure()
+      plt.plot(alp_prev[1][0,:,0], '-', label = 'alp2_prev')
+      plt.plot(alp_next[1][0,:,0], 'o', label = 'alp2_next')
+      plt.plot(alp2[0,:], '-*', label = 'alp2_true')
+      plt.legend()
+      plt.title('alp2_prev vs alp2_next')
+      plt.xlabel('x')
+      plt.ylabel('alp2')
+      plt.grid()
+      plt.tight_layout()
+      fig_tf = utils.plot_to_image(fig)
+      tf.summary.image('alp2_prev vs alp2_next', fig_tf, step = tfrecord_ind + i)
+      plt.close(fig)
+
     phi_prev = phi_next
     rho_prev = rho_next
     alp_prev = alp_next
@@ -186,7 +232,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
         rho0 = rho_curr
         alp0 = alp_curr
         break
-    ratio = i / nt_PDHG
+    ratio = (i+1) / nt_PDHG
     samples_processed = pdhg_iters
     utils.timer.estimate_time("time estimate", ratio, samples_processed)
       
