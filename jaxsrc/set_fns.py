@@ -36,7 +36,7 @@ def set_up_example_fns(egno, ndim):
   # omit the indicator function
   # note: dim of p is [nt-1, nx]
   # H_plus_fn, H_minus_fn, H_fn are only used in this function and compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general, compute_EO_forward_solution_1d_general, compute_EO_forward_solution_2d_general
-  if egno == 1:  # f = -alp, L = |alp|^2/2, dim_ctrl = dim_state = ndim
+  if egno == 1 and ndim == 2:  # f = -alp, L = |alp|^2/2, dim_ctrl = dim_state = ndim
     # TODO: H_plus and H_minus are used in EO scheme to measure the performance. Any better measure?
     H_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p,0) **2/2  # [...] -> [...]
     H_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p,0) **2/2
@@ -56,25 +56,27 @@ def set_up_example_fns(egno, ndim):
       pass
     else:
       raise ValueError("ndim {} not implemented".format(ndim))
-  elif egno > 1 and egno <= 5 and ndim == 1: # f = -a(x) * alp, L = |alp|^2/2/c(x), dim_ctrl = dim_state = ndim = 1
-    if egno == 1:  # a(x) = 1
+  elif ndim == 1: # f = -a(x) * alp, L = |alp|^2/2/c(x), dim_ctrl = dim_state = ndim = 1
+    if egno == 1 or egno == 11:  # a(x) = 1
       coeff_fn = lambda x_arr, t_arr: jnp.ones_like(x_arr)  # [..., ndim] -> [..., 1]
-    if egno == 2:  # a(x) = |x-1| + 0.1
-      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr[...,0] - 1.0) + 0.1  # [..., ndim] -> [..., 1]
-    elif egno == 3:  # a(x) = |x-1| - 0.1
+    elif egno == 2 or egno == 12:  # a(x) = |x-1| + 0.1
+      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) + 0.1  # [..., ndim] -> [..., 1]
+    elif egno == 3 or egno == 13:  # a(x) = |x-1| - 0.1
       coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.1  # [..., ndim] -> [..., 1]
-    elif egno == 4:  # a(x) = |x-1| - 0.5
+    elif egno == 4 or egno == 14:  # a(x) = |x-1| - 0.5
       coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.5  # [..., ndim] -> [..., 1]
-    elif egno == 5:  # a(x) = |x-1| - 1.0
+    elif egno == 5 or egno == 15:  # a(x) = |x-1| - 1.0
       coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 1.0  # [..., ndim] -> [..., 1]
+    elif egno == 6 or egno == 16:  # a(x) = |x-1|^2 + 0.1
+      coeff_fn = lambda x_arr, t_arr: (x_arr - 1.0)**2 + 0.1  # [..., ndim] -> [..., 1]
     if egno < 10:  # c(x) = 1
       c_fn = lambda x_arr, t_arr: jnp.ones_like(x_arr)  # [..., ndim] -> [..., 1]
-    else:  # c(x) = a(x)
-      c_fn = coeff_fn
+    else:  # c(x) = a(x) ** 2
+      c_fn = lambda x_arr, t_arr: coeff_fn(x_arr, t_arr) ** 2 + 1e-6
     H_plus_fn = lambda p, x_arr, t_arr: (jnp.maximum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2 * c_fn(x_arr, t_arr)[...,0]
-    H_minus_fn = lambda p, x_arr, t_arr: (jnp.minimum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
+    H_minus_fn = lambda p, x_arr, t_arr: (jnp.minimum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2 * c_fn(x_arr, t_arr)[...,0]
     f_fn = lambda alp, x_arr, t_arr: -alp * coeff_fn(x_arr, t_arr)  # [..., dim_ctrl] -> [..., dim_state]
-    L_fn = lambda alp, x_arr, t_arr: jnp.sum(alp**2, axis = -1)/2
+    L_fn = lambda alp, x_arr, t_arr: jnp.sum(alp**2 / c_fn(x_arr, t_arr), axis = -1)/2  # [..., ndim] -> [...]
     def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
       alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
       eps = 1e-4
@@ -82,36 +84,36 @@ def set_up_example_fns(egno, ndim):
       param_inv = param_inv[...,None]  # [nt-1, nx, 1]
       Dx_right_phi = Dx_right_phi[...,None]  # [nt-1, nx, 1]
       Dx_left_phi = Dx_left_phi[...,None]  # [nt-1, nx, 1]
-      alp1_next = (Dx_right_phi * coeff_fn(x_arr, t_arr) + param_inv * alp1_prev) / (1 + param_inv)
+      alp1_next = (Dx_right_phi * coeff_fn(x_arr, t_arr) + param_inv * alp1_prev) / (1/c_fn(x_arr, t_arr) + param_inv)
       alp1_next = (alp1_next * (f_fn(alp1_next, x_arr, t_arr) >= 0.0))
-      alp2_next = (Dx_left_phi * coeff_fn(x_arr, t_arr) + param_inv * alp2_prev) / (1 + param_inv)
+      alp2_next = (Dx_left_phi * coeff_fn(x_arr, t_arr) + param_inv * alp2_prev) / (1/c_fn(x_arr, t_arr) + param_inv)
       alp2_next = (alp2_next * (f_fn(alp2_next, x_arr, t_arr) < 0.0))
       return (alp1_next, alp2_next)
-  elif egno > 10 and ndim == 1: # same HJ with eg 1-5, but different f and H: set f(alp) = -alp, L(x,alp) = |alp|^2/a(x)^2/2
-    if egno == 12:  # a(x) = |x-1| + 0.1
-      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) + 0.1  # [..., ndim] -> [..., 1]
-    elif egno == 13:  # a(x) = |x-1| - 0.1
-      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.1  # [..., ndim] -> [..., 1]
-    elif egno == 14:  # a(x) = |x-1| - 0.5
-      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.5  # [..., ndim] -> [..., 1]
-    elif egno == 15:  # a(x) = |x-1| - 1.0
-      coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 1.0  # [..., ndim] -> [..., 1]
-    H_plus_fn = lambda p, x_arr, t_arr: (jnp.maximum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
-    H_minus_fn = lambda p, x_arr, t_arr: (jnp.minimum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
-    f_fn = lambda alp, x_arr, t_arr: -alp  # [..., dim_ctrl] -> [..., dim_state]
-    L_fn = lambda alp, x_arr, t_arr: jnp.sum((alp/coeff_fn(x_arr, t_arr))**2, axis = -1)/2  # [..., ndim] -> [...]
-    def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
-      alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
-      eps = 1e-4
-      param_inv = (rho + eps) / sigma
-      param_inv = param_inv[...,None]  # [nt-1, nx, 1]
-      Dx_right_phi = Dx_right_phi[...,None]  # [nt-1, nx, 1]
-      Dx_left_phi = Dx_left_phi[...,None]  # [nt-1, nx, 1]
-      alp1_next = (Dx_right_phi + param_inv * alp1_prev) / (1/coeff_fn(x_arr, t_arr)**2 + param_inv)  # [nt-1, nx, 1]
-      alp1_next = (alp1_next * (f_fn(alp1_next, x_arr, t_arr) >= 0.0))
-      alp2_next = (Dx_left_phi + param_inv * alp2_prev) / (1/coeff_fn(x_arr, t_arr)**2 + param_inv)  # [nt-1, nx, 1]
-      alp2_next = (alp2_next * (f_fn(alp2_next, x_arr, t_arr) < 0.0))
-      return (alp1_next, alp2_next)
+  # elif egno > 10 and ndim == 1: # same HJ with eg 1-5, but different f and H: set f(alp) = -alp, L(x,alp) = |alp|^2/a(x)^2/2
+  #   if egno == 12:  # a(x) = |x-1| + 0.1
+  #     coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) + 0.1  # [..., ndim] -> [..., 1]
+  #   elif egno == 13:  # a(x) = |x-1| - 0.1
+  #     coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.1  # [..., ndim] -> [..., 1]
+  #   elif egno == 14:  # a(x) = |x-1| - 0.5
+  #     coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 0.5  # [..., ndim] -> [..., 1]
+  #   elif egno == 15:  # a(x) = |x-1| - 1.0
+  #     coeff_fn = lambda x_arr, t_arr: jnp.abs(x_arr - 1.0) - 1.0  # [..., ndim] -> [..., 1]
+  #   H_plus_fn = lambda p, x_arr, t_arr: (jnp.maximum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
+  #   H_minus_fn = lambda p, x_arr, t_arr: (jnp.minimum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2
+  #   f_fn = lambda alp, x_arr, t_arr: -alp  # [..., dim_ctrl] -> [..., dim_state]
+  #   L_fn = lambda alp, x_arr, t_arr: jnp.sum((alp/coeff_fn(x_arr, t_arr))**2, axis = -1)/2  # [..., ndim] -> [...]
+  #   def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
+  #     alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
+  #     eps = 1e-4
+  #     param_inv = (rho + eps) / sigma
+  #     param_inv = param_inv[...,None]  # [nt-1, nx, 1]
+  #     Dx_right_phi = Dx_right_phi[...,None]  # [nt-1, nx, 1]
+  #     Dx_left_phi = Dx_left_phi[...,None]  # [nt-1, nx, 1]
+  #     alp1_next = (Dx_right_phi + param_inv * alp1_prev) / (1/coeff_fn(x_arr, t_arr)**2 + param_inv)  # [nt-1, nx, 1]
+  #     alp1_next = (alp1_next * (f_fn(alp1_next, x_arr, t_arr) >= 0.0))
+  #     alp2_next = (Dx_left_phi + param_inv * alp2_prev) / (1/coeff_fn(x_arr, t_arr)**2 + param_inv)  # [nt-1, nx, 1]
+  #     alp2_next = (alp2_next * (f_fn(alp2_next, x_arr, t_arr) < 0.0))
+  #     return (alp1_next, alp2_next)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
