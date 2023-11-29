@@ -98,27 +98,27 @@ def set_up_example_fns(egno, ndim):
     L1_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr)[...,0] >= 0.0)
     L2_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr)[...,0] < 0.0)
   else: # 1 stands for the corresponding coordinate positive, 2 stands for negative
-    indicator_11_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0] >= 0.0) & (f_fn(alp, x_arr, t_arr)[...,1] >= 0.0)  # [..., dim_ctrl] -> [...]
-    indicator_12_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0] >= 0.0) & (f_fn(alp, x_arr, t_arr)[...,1] < 0.0)
-    indicator_21_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0] < 0.0) & (f_fn(alp, x_arr, t_arr)[...,1] >= 0.0)
-    indicator_22_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0] < 0.0) & (f_fn(alp, x_arr, t_arr)[...,1] < 0.0)
+    indicator_11_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] >= 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] >= 0.0)  # [..., dim_ctrl] -> [...,1]
+    indicator_12_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] >= 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] < 0.0)
+    indicator_21_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] < 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] >= 0.0)
+    indicator_22_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] < 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] < 0.0)
     def alp_update_base_fn(alp_prev, Dphi, param_inv, x_arr, t_arr):
       # solves min_alp param_inv * |alp - alp_prev|^2/2 + <alp, Dphi> + |alp|^2/2
       alp_next = (param_inv * alp_prev + Dphi) / (1 + param_inv)
       return alp_next
     def alp_update_fn(alp_prev, Dphi, rho, sigma, x_arr, t_arr):  # Dphi is a tuple including D11_phi, D12_phi, D21_phi, D22_phi
       alp11_prev, alp12_prev, alp21_prev, alp22_prev = alp_prev  # [nt-1, nx, ny, 2]
-      D11_phi, D12_phi, D21_phi, D22_phi = Dphi
+      D11_phi, D12_phi, D21_phi, D22_phi = Dphi  # [nt-1, nx, ny, 2]
       eps = 1e-4
       param_inv = (rho[...,None] + eps) / sigma  # [nt-1, nx, ny, 1]
       alp11_next = alp_update_base_fn(alp11_prev, D11_phi, param_inv, x_arr, t_arr)  # [nt-1, nx, ny, 2]
-      alp11_next *= indicator_11_fn(alp11_next, x_arr, t_arr)[...,None]  # [nt-1, nx, ny, 2]
+      alp11_next *= indicator_11_fn(alp11_next, x_arr, t_arr)  # [nt-1, nx, ny, 2]
       alp12_next = alp_update_base_fn(alp12_prev, D12_phi, param_inv, x_arr, t_arr)
-      alp12_next *= indicator_12_fn(alp12_next, x_arr, t_arr)[...,None]
+      alp12_next *= indicator_12_fn(alp12_next, x_arr, t_arr)
       alp21_next = alp_update_base_fn(alp21_prev, D21_phi, param_inv, x_arr, t_arr)
-      alp21_next *= indicator_21_fn(alp21_next, x_arr, t_arr)[...,None]
+      alp21_next *= indicator_21_fn(alp21_next, x_arr, t_arr)
       alp22_next = alp_update_base_fn(alp22_prev, D22_phi, param_inv, x_arr, t_arr)
-      alp22_next *= indicator_22_fn(alp22_next, x_arr, t_arr)[...,None]
+      alp22_next *= indicator_22_fn(alp22_next, x_arr, t_arr)
       return (alp11_next, alp12_next, alp21_next, alp22_next)
   
   if ndim == 1:

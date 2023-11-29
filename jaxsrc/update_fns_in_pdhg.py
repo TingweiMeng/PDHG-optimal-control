@@ -29,8 +29,8 @@ def compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   ind_12 = fns_dict.indicator_12_fn(alp_12, x_arr, t_arr)
   ind_21 = fns_dict.indicator_21_fn(alp_21, x_arr, t_arr)
   ind_22 = fns_dict.indicator_22_fn(alp_22, x_arr, t_arr)
-  L_val = fns_dict.L_fn(alp_11, x_arr, t_arr) * ind_11 + fns_dict.L_fn(alp_12, x_arr, t_arr) * ind_12 \
-          + fns_dict.L_fn(alp_21, x_arr, t_arr) * ind_21 + fns_dict.L_fn(alp_22, x_arr, t_arr) * ind_22  # [nt-1, nx, ny]
+  L_val = fns_dict.L_fn(alp_11, x_arr, t_arr) * ind_11[...,0] + fns_dict.L_fn(alp_12, x_arr, t_arr) * ind_12[...,0] \
+          + fns_dict.L_fn(alp_21, x_arr, t_arr) * ind_21[...,0] + fns_dict.L_fn(alp_22, x_arr, t_arr) * ind_22[...,0]  # [nt-1, nx, ny]
   Dx_right_phi = Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
   Dx_left_phi = Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
   Dy_right_phi = Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
@@ -40,10 +40,10 @@ def compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   D12_phi = jnp.stack([Dx_right_phi, Dy_left_phi], axis = -1)
   D21_phi = jnp.stack([Dx_left_phi, Dy_right_phi], axis = -1)
   D22_phi = jnp.stack([Dx_left_phi, Dy_left_phi], axis = -1)
-  f11 = fns_dict.f_fn(alp_11, x_arr, t_arr) * ind_11[...,None]  # [nt-1, nx, ny, 2]
-  f12 = fns_dict.f_fn(alp_12, x_arr, t_arr) * ind_12[...,None]
-  f21 = fns_dict.f_fn(alp_21, x_arr, t_arr) * ind_21[...,None]
-  f22 = fns_dict.f_fn(alp_22, x_arr, t_arr) * ind_22[...,None]
+  f11 = fns_dict.f_fn(alp_11, x_arr, t_arr) * ind_11  # [nt-1, nx, ny, 2]
+  f12 = fns_dict.f_fn(alp_12, x_arr, t_arr) * ind_12
+  f21 = fns_dict.f_fn(alp_21, x_arr, t_arr) * ind_21
+  f22 = fns_dict.f_fn(alp_22, x_arr, t_arr) * ind_22
   vec = Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx, ny]
   vec -= jnp.sum(D11_phi * f11 + D12_phi * f12 + D21_phi * f21 + D22_phi * f22, axis = -1)
   vec = vec - L_val
@@ -70,10 +70,10 @@ def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
   ind_12 = fns_dict.indicator_12_fn(alp_12, x_arr, t_arr)
   ind_21 = fns_dict.indicator_21_fn(alp_21, x_arr, t_arr)
   ind_22 = fns_dict.indicator_22_fn(alp_22, x_arr, t_arr)
-  f11 = fns_dict.f_fn(alp_11, x_arr, t_arr) * ind_11[...,None]  # [nt-1, nx, ny, 2]
-  f12 = fns_dict.f_fn(alp_12, x_arr, t_arr) * ind_12[...,None]
-  f21 = fns_dict.f_fn(alp_21, x_arr, t_arr) * ind_21[...,None]
-  f22 = fns_dict.f_fn(alp_22, x_arr, t_arr) * ind_22[...,None]
+  f11 = fns_dict.f_fn(alp_11, x_arr, t_arr) * ind_11  # [nt-1, nx, ny, 2]
+  f12 = fns_dict.f_fn(alp_12, x_arr, t_arr) * ind_12
+  f21 = fns_dict.f_fn(alp_21, x_arr, t_arr) * ind_21
+  f22 = fns_dict.f_fn(alp_22, x_arr, t_arr) * ind_22
   Dx_left_coeff = f11[...,0] + f12[...,0]  # [nt-1, nx, ny], velocity for Dx_left(v*rho)
   Dx_right_coeff = f21[...,0] + f22[...,0]
   Dy_left_coeff = f11[...,1] + f21[...,1]
