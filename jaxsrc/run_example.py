@@ -48,7 +48,7 @@ def main(argv):
   print('ny: ', ny)
 
   N_maxiter = FLAGS.N_maxiter
-  print_freq = 10000
+  print_freq = FLAGS.print_freq
   x_period, y_period = 2, 2
 
   time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
@@ -162,6 +162,7 @@ if __name__ == '__main__':
   
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
   flags.DEFINE_integer('N_maxiter', 1000000, 'maximum number of iterations')
+  flags.DEFINE_integer('print_freq', 10000, 'print frequency')
   flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
 
