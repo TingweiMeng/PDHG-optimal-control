@@ -30,8 +30,8 @@ def set_up_numerical_L(egno, ndim):
   if ndim == 1:
     L_fn = lambda alp, x_arr, t_arr: (L_fn_1d(alp[0] + alp[1], x_arr, t_arr) + L_fn_1d(alp[0] - alp[1], x_arr, t_arr))/2
   elif ndim == 2:
-    L_fn = lambda alp, x_arr, t_arr: (L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr) + L_fn_2d(alp[0] - alp[1], alp[2] - alp[3], x_arr, t_arr))/2
-    # L_fn = lambda alp, x_arr, t_arr: L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr)
+    # L_fn = lambda alp, x_arr, t_arr: (L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr) + L_fn_2d(alp[0] - alp[1], alp[2] - alp[3], x_arr, t_arr))/2
+    L_fn = lambda alp, x_arr, t_arr: L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr)
   else:
     raise ValueError("ndim {} not implemented".format(ndim))
   return L_fn
