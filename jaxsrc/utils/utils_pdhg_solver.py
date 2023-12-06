@@ -82,28 +82,28 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
       # plot 
-      if ndim == 2:
-        fig = plt.figure()
-        plt.contourf(x_arr[0,...,0], x_arr[0,...,1], phi_next[-1,...])
-        plt.colorbar()
-        plt.savefig('phi.png')
-        plt.close()
-        fig = plt.figure()
-        plt.contourf(x_arr[0,...,0], x_arr[0,...,1], rho_next[-1,...])
-        plt.colorbar()
-        plt.savefig('rho.png')
-        plt.close()
-        for j in range(2**ndim):
-          fig = plt.figure()
-          plt.contourf(x_arr[0,...,0], x_arr[0,...,1], alp_next[j][-1,...,0])
-          plt.colorbar()
-          plt.savefig('alp_{}_x.png'.format(j))
-          plt.close()
-          fig = plt.figure()
-          plt.contourf(x_arr[0,...,0], x_arr[0,...,1], alp_next[j][-1,...,1])
-          plt.colorbar()
-          plt.savefig('alp_{}_y.png'.format(j))
-          plt.close()
+      # if ndim == 2:
+      #   fig = plt.figure()
+      #   plt.contourf(x_arr[0,...,0], x_arr[0,...,1], phi_next[-1,...])
+      #   plt.colorbar()
+      #   plt.savefig('phi.png')
+      #   plt.close()
+      #   fig = plt.figure()
+      #   plt.contourf(x_arr[0,...,0], x_arr[0,...,1], rho_next[-1,...])
+      #   plt.colorbar()
+      #   plt.savefig('rho.png')
+      #   plt.close()
+      #   for j in range(2**ndim):
+      #     fig = plt.figure()
+      #     plt.contourf(x_arr[0,...,0], x_arr[0,...,1], alp_next[j][-1,...,0])
+      #     plt.colorbar()
+      #     plt.savefig('alp_{}_x.png'.format(j))
+      #     plt.close()
+      #     fig = plt.figure()
+      #     plt.contourf(x_arr[0,...,0], x_arr[0,...,1], alp_next[j][-1,...,1])
+      #     plt.colorbar()
+      #     plt.savefig('alp_{}_y.png'.format(j))
+      #     plt.close()
     phi_prev = phi_next
     rho_prev = rho_next
     alp_prev = alp_next
@@ -147,10 +147,15 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   else:
     nx, ny = nspatial
     rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny]) + c_on_rho
-    alp1_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    alp2_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
+    # TODO: this is for debug
+    # alp1_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
+    # alp2_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
+    # alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
+    # alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
+    alp1_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    alp2_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
     alp0 = (alp1_x_0, alp2_x_0, alp1_y_0, alp2_y_0)
   print('shape of phi0: ', jnp.shape(phi0), flush = True)
   print('shape of rho0: ', jnp.shape(rho0), flush = True)

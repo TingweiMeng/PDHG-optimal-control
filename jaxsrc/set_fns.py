@@ -22,6 +22,18 @@ def set_up_J(egno, ndim, period_spatial):
     raise ValueError("egno {} not implemented".format(egno))
   return J
 
+def set_up_numerical_L(egno, ndim):
+  # numerical L is a function taking alp, x, t as input, where alp is a tuple containing alp1, alp2 in 1d and alp11, alp12, alp21, alp22 in 2d
+  # for now, all L fns are |alp|^2/2
+  L_fn_1d = lambda alp, x_arr, t_arr: alp[...,0]**2/2  # [..., 1] -> [...]
+  L_fn_2d = lambda alp_x, alp_y, x_arr, t_arr: L_fn_1d(alp_x, x_arr, t_arr) + L_fn_1d(alp_y, x_arr, t_arr)  # [..., 1], [..., 1] -> [...]
+  if ndim == 1:
+    L_fn = lambda alp, x_arr, t_arr: (L_fn_1d(alp[0] + alp[1], x_arr, t_arr) + L_fn_1d(alp[0] - alp[1], x_arr, t_arr))/2
+  elif ndim == 2:
+    L_fn = lambda alp, x_arr, t_arr: (L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr) + L_fn_2d(alp[0] - alp[1], alp[2] - alp[3], x_arr, t_arr))/2
+  else:
+    raise ValueError("ndim {} not implemented".format(ndim))
+  return L_fn
 
 def set_up_example_fns(egno, ndim):
   '''
@@ -36,26 +48,11 @@ def set_up_example_fns(egno, ndim):
   # omit the indicator function
   # note: dim of p is [nt-1, nx]
   # H_plus_fn, H_minus_fn, H_fn are only used in this function and compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general, compute_EO_forward_solution_1d_general, compute_EO_forward_solution_2d_general
-  if egno == 1 and ndim == 2:  # f = -alp, L = |alp|^2/2, dim_ctrl = dim_state = ndim
+  if egno == 1 and ndim == 2:  # f = -alp, dim_ctrl = dim_state = ndim
     # TODO: H_plus and H_minus are used in EO scheme to measure the performance. Any better measure?
     H_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p,0) **2/2  # [...] -> [...]
     H_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p,0) **2/2
     f_fn = lambda alp, x_arr, t_arr: -alp  # [..., dim_ctrl] -> [..., dim_state]
-    L_fn = lambda alp, x_arr, t_arr: jnp.sum(alp**2, axis = -1)/2  # [..., ndim] -> [...]
-    if ndim == 1:
-      def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
-        alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
-        eps = 1e-4
-        param_inv = (rho + eps) / sigma  # [nt-1, nx]
-        alp1_next = (Dx_right_phi + param_inv * alp1_prev[...,0]) / (1 + param_inv)
-        alp1_next = jnp.minimum(alp1_next, 0.0)[...,None]
-        alp2_next = (Dx_left_phi + param_inv * alp2_prev[...,0]) / (1 + param_inv)
-        alp2_next = jnp.maximum(alp2_next, 0.0)[...,None]
-        return (alp1_next, alp2_next)
-    elif ndim == 2:
-      pass
-    else:
-      raise ValueError("ndim {} not implemented".format(ndim))
   elif ndim == 1: # f = -a(x) * alp, L = |alp|^2/2/c(x), dim_ctrl = dim_state = ndim = 1
     if egno == 1 or egno == 11:  # a(x) = 1
       coeff_fn = lambda x_arr, t_arr: jnp.ones_like(x_arr)  # [..., ndim] -> [..., 1]
@@ -75,7 +72,7 @@ def set_up_example_fns(egno, ndim):
       c_fn = lambda x_arr, t_arr: coeff_fn(x_arr, t_arr) ** 2 + 1e-6
     H_plus_fn = lambda p, x_arr, t_arr: (jnp.maximum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2 * c_fn(x_arr, t_arr)[...,0]
     H_minus_fn = lambda p, x_arr, t_arr: (jnp.minimum(p,0) * coeff_fn(x_arr, t_arr)[...,0]) **2/2 * c_fn(x_arr, t_arr)[...,0]
-    f_fn = lambda alp, x_arr, t_arr: -alp * coeff_fn(x_arr, t_arr)  # [..., dim_ctrl] -> [..., dim_state]
+    f_fn = lambda alp, x_arr, t_arr: -alp * coeff_fn(x_arr, t_arr)  # [..., dim_ctrl] -> [..., dim_state] or [..., 1] -> [..., 1]
     L_fn = lambda alp, x_arr, t_arr: jnp.sum(alp**2 / c_fn(x_arr, t_arr), axis = -1)/2  # [..., ndim] -> [...]
     def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
       alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
@@ -92,6 +89,8 @@ def set_up_example_fns(egno, ndim):
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
+  numerical_L_fn = set_up_numerical_L(egno, ndim)
+
   if ndim == 1:
     f_plus_fn = lambda alp, x_arr, t_arr: jnp.maximum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)  # [..., dim_ctrl] -> [...]
     f_minus_fn = lambda alp, x_arr, t_arr: jnp.minimum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)
@@ -122,20 +121,19 @@ def set_up_example_fns(egno, ndim):
       return (alp11_next, alp12_next, alp21_next, alp22_next)
   
   if ndim == 1:
-    Functions = namedtuple('Functions', ['f_plus_fn', 'f_minus_fn', 'L1_fn', 'L2_fn', 'alp_update_fn',
+    Functions = namedtuple('Functions', ['f_fn', 'numerical_L_fn', 'alp_update_fn',
                                         'H_plus_fn', 'H_minus_fn'])
     fns_dict = Functions(H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
-                        f_plus_fn=f_plus_fn, f_minus_fn=f_minus_fn, L1_fn=L1_fn, L2_fn=L2_fn,
+                        f_fn=f_fn, numerical_L_fn=numerical_L_fn,
                         alp_update_fn = alp_update_fn)
   elif ndim == 2:
-    Functions = namedtuple('Functions', ['f_fn', 'L_fn', 'alp_update_fn', 
+    Functions = namedtuple('Functions', ['f_fn', 'numerical_L_fn', 'alp_update_fn', 
                                           'indicator_11_fn', 'indicator_12_fn', 'indicator_21_fn', 'indicator_22_fn',
                                           'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn'])
-    fns_dict = Functions(f_fn = f_fn, L_fn = L_fn, alp_update_fn = alp_update_fn,
+    fns_dict = Functions(f_fn = f_fn, numerical_L_fn = numerical_L_fn, alp_update_fn = alp_update_fn,
                         indicator_11_fn = indicator_11_fn, indicator_12_fn = indicator_12_fn,
                         indicator_21_fn = indicator_21_fn, indicator_22_fn = indicator_22_fn,
                         Hx_plus_fn=H_plus_fn, Hx_minus_fn=H_minus_fn, Hy_plus_fn=H_plus_fn, Hy_minus_fn=H_minus_fn)
-                        
   else:
     raise ValueError("ndim {} not implemented".format(ndim))
   return fns_dict
