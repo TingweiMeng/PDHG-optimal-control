@@ -70,7 +70,7 @@ def main(argv):
     period_spatial = (x_period, y_period)
   
   J = set_up_J(egno, ndim, period_spatial)
-  fns_dict = set_up_example_fns(egno, ndim)
+  fns_dict = set_up_example_fns(egno, ndim, FLAGS.numerical_L_ind)
   
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period - dx, num = nx)[None,:,None]  # [1, nx, 1]
@@ -172,5 +172,6 @@ if __name__ == '__main__':
   flags.DEFINE_float('C', 1.0, 'constant in preconditioning')
   flags.DEFINE_float('pow', 1.0, 'power in preconditioning')
   flags.DEFINE_float('Ct', 1.0, 'constant in preconditioning')
+  flags.DEFINE_integer('numerical_L_ind', 0, 'index of numerical L')
   
   app.run(main)

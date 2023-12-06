@@ -22,7 +22,7 @@ def set_up_J(egno, ndim, period_spatial):
     raise ValueError("egno {} not implemented".format(egno))
   return J
 
-def set_up_numerical_L(egno, ndim):
+def set_up_numerical_L(egno, ndim, ind):
   # numerical L is a function taking alp, x, t as input, where alp is a tuple containing alp1, alp2 in 1d and alp11, alp12, alp21, alp22 in 2d
   # for now, all L fns are |alp|^2/2
   L_fn_1d = lambda alp, x_arr, t_arr: alp[...,0]**2/2  # [..., 1] -> [...]
@@ -30,13 +30,17 @@ def set_up_numerical_L(egno, ndim):
   if ndim == 1:
     L_fn = lambda alp, x_arr, t_arr: (L_fn_1d(alp[0] + alp[1], x_arr, t_arr) + L_fn_1d(alp[0] - alp[1], x_arr, t_arr))/2
   elif ndim == 2:
-    # L_fn = lambda alp, x_arr, t_arr: (L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr) + L_fn_2d(alp[0] - alp[1], alp[2] - alp[3], x_arr, t_arr))/2
-    L_fn = lambda alp, x_arr, t_arr: L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr)
+    if ind == 0:
+      L_fn = lambda alp, x_arr, t_arr: (L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr) + L_fn_2d(alp[0] - alp[1], alp[2] - alp[3], x_arr, t_arr))/2
+    elif ind == 1:
+      L_fn = lambda alp, x_arr, t_arr: L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr)
+    else:
+      raise ValueError("ind {} not implemented".format(ind))
   else:
     raise ValueError("ndim {} not implemented".format(ndim))
   return L_fn
 
-def set_up_example_fns(egno, ndim):
+def set_up_example_fns(egno, ndim, numerical_L_ind):
   '''
   @ parameters:
     egno: int
@@ -117,7 +121,7 @@ def set_up_example_fns(egno, ndim):
   else:
     raise ValueError("egno {} not implemented".format(egno))
   
-  numerical_L_fn = set_up_numerical_L(egno, ndim)
+  numerical_L_fn = set_up_numerical_L(egno, ndim, numerical_L_ind)
 
   if ndim == 1:
     Functions = namedtuple('Functions', ['f_fn', 'numerical_L_fn', 'alp_update_fn',
