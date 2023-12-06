@@ -58,8 +58,8 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True)
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     # contourf plot
-    ax.contourf(x_arr[...,0], x_arr[...,1], phi[ind,...])  # TODO: check domain 
-    ax.colorbar()
+    ct = ax.contourf(x_arr[...,0], x_arr[...,1], phi[ind,...])  # TODO: check domain 
+    fig.colorbar(ct, ax=ax)
   fig.suptitle(title)
   if tfboard:
     return utils.plot_to_image(fig)
