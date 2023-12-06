@@ -7,7 +7,7 @@ from set_fns import set_up_example_fns
 from solver import compute_xarr, compute_ground_truth, compute_err_1d, compute_err_2d
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
 from solver import read_solution, read_raw_file, save_raw
-import plot_soln
+import utils.utils_plot as utils_plot
 
 
 
@@ -46,11 +46,11 @@ def main(argv):
   if ndim == 1:
     compute_residual_fn = compute_HJ_residual_EO_1d_general
     compute_err_fn = compute_err_1d
-    plot_fn = plot_soln.plot_solution_1d
+    plot_fn = utils_plot.plot_solution_1d
   else:
     compute_residual_fn = compute_HJ_residual_EO_2d_general
     compute_err_fn = compute_err_2d
-    plot_fn = plot_soln.plot_solution_2d
+    plot_fn = utils_plot.plot_solution_2d
 
   # compute or read true soln
   if if_compute_true_sol == False:

@@ -10,7 +10,7 @@ from utils.utils_precond import compute_Dxx_fft_fv
 import solver
 import tensorflow as tf
 import os
-import plot_soln
+import utils.utils_plot as utils_plot
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
@@ -124,10 +124,10 @@ def main(argv):
 
   if FLAGS.tfboard:
     if ndim == 1:
-      plot_fn = plot_soln.plot_solution_1d
+      plot_fn = utils_plot.plot_solution_1d
       alp_titles = ['alp_1', 'alp_2']
     elif ndim == 2:
-      plot_fn = plot_soln.plot_solution_2d
+      plot_fn = utils_plot.plot_solution_2d
       alp_titles = ['alp_11', 'alp_12', 'alp_21', 'alp_22']
     else:
       raise NotImplementedError
