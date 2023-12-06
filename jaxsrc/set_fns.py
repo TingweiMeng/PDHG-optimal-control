@@ -31,6 +31,7 @@ def set_up_numerical_L(egno, ndim):
     L_fn = lambda alp, x_arr, t_arr: (L_fn_1d(alp[0] + alp[1], x_arr, t_arr) + L_fn_1d(alp[0] - alp[1], x_arr, t_arr))/2
   elif ndim == 2:
     L_fn = lambda alp, x_arr, t_arr: (L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr) + L_fn_2d(alp[0] - alp[1], alp[2] - alp[3], x_arr, t_arr))/2
+    # L_fn = lambda alp, x_arr, t_arr: L_fn_2d(alp[0] + alp[1], alp[2] + alp[3], x_arr, t_arr)
   else:
     raise ValueError("ndim {} not implemented".format(ndim))
   return L_fn
@@ -53,6 +54,33 @@ def set_up_example_fns(egno, ndim):
     H_plus_fn = lambda p, x_arr, t_arr: jnp.maximum(p,0) **2/2  # [...] -> [...]
     H_minus_fn = lambda p, x_arr, t_arr: jnp.minimum(p,0) **2/2
     f_fn = lambda alp, x_arr, t_arr: -alp  # [..., dim_ctrl] -> [..., dim_state]
+    def alp_update_base_fn(alp_prev, Dphi, param_inv, x_arr, t_arr):
+      # solves min_alp param_inv * |alp - alp_prev|^2/2 + <alp, Dphi> + |alp|^2/2
+      ''' @ parameters:
+            alp_prev: [nt-1, nx, ny, 1]
+            Dphi: [nt-1, nx, ny]
+            param_inv: [nt-1, nx, ny, 1]
+            x_arr: vec that can be broadcasted to [nt-1, nx, ny]
+            t_arr: vec that can be broadcasted to [nt-1, nx, ny]
+          @ return:
+            alp_next: [nt-1, nx, ny, 1]
+      '''
+      alp_next = (param_inv * alp_prev + Dphi[...,None]) / (1 + param_inv)
+      return alp_next
+    def alp_update_fn(alp_prev, Dphi, rho, sigma, x_arr, t_arr):  # Dphi is a tuple including D11_phi, D12_phi, D21_phi, D22_phi
+      alp1_x_prev, alp2_x_prev, alp1_y_prev, alp2_y_prev = alp_prev  # [nt-1, nx, ny, 1]
+      Dx_right_phi, Dx_left_phi, Dy_right_phi, Dy_left_phi = Dphi  # [nt-1, nx, ny]
+      eps = 1e-4
+      param_inv = (rho[...,None] + eps) / sigma  # [nt-1, nx, ny, 1]
+      alp1_x_next = alp_update_base_fn(alp1_x_prev, Dx_right_phi, param_inv, x_arr, t_arr)
+      alp1_x_next *= (f_fn(alp1_x_next, x_arr, t_arr)[...,0:1] >= 0.0)  # [..., 1]
+      alp2_x_next = alp_update_base_fn(alp2_x_prev, Dx_left_phi, param_inv, x_arr, t_arr)
+      alp2_x_next *= (f_fn(alp2_x_next, x_arr, t_arr)[...,0:1] < 0.0)  # [..., 1]
+      alp1_y_next = alp_update_base_fn(alp1_y_prev, Dy_right_phi, param_inv, x_arr, t_arr)
+      alp1_y_next *= (f_fn(alp1_y_next, x_arr, t_arr)[...,0:1] >= 0.0)  # [..., 1]
+      alp2_y_next = alp_update_base_fn(alp2_y_prev, Dy_left_phi, param_inv, x_arr, t_arr)
+      alp2_y_next *= (f_fn(alp2_y_next, x_arr, t_arr)[...,0:1] < 0.0)  # [..., 1]
+      return (alp1_x_next, alp2_x_next, alp1_y_next, alp2_y_next)
   elif ndim == 1: # f = -a(x) * alp, L = |alp|^2/2/c(x), dim_ctrl = dim_state = ndim = 1
     if egno == 1 or egno == 11:  # a(x) = 1
       coeff_fn = lambda x_arr, t_arr: jnp.ones_like(x_arr)  # [..., ndim] -> [..., 1]
@@ -92,35 +120,6 @@ def set_up_example_fns(egno, ndim):
   numerical_L_fn = set_up_numerical_L(egno, ndim)
 
   if ndim == 1:
-    f_plus_fn = lambda alp, x_arr, t_arr: jnp.maximum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)  # [..., dim_ctrl] -> [...]
-    f_minus_fn = lambda alp, x_arr, t_arr: jnp.minimum(f_fn(alp, x_arr, t_arr)[...,0], 0.0)
-    L1_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr)[...,0] >= 0.0)
-    L2_fn = lambda alp, x_arr, t_arr: L_fn(alp, x_arr, t_arr) * (f_fn(alp, x_arr, t_arr)[...,0] < 0.0)
-  else: # 1 stands for the corresponding coordinate positive, 2 stands for negative
-    indicator_11_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] >= 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] >= 0.0)  # [..., dim_ctrl] -> [...,1]
-    indicator_12_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] >= 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] < 0.0)
-    indicator_21_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] < 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] >= 0.0)
-    indicator_22_fn = lambda alp, x_arr, t_arr: (f_fn(alp, x_arr, t_arr)[...,0:1] < 0.0) & (f_fn(alp, x_arr, t_arr)[...,1:2] < 0.0)
-    def alp_update_base_fn(alp_prev, Dphi, param_inv, x_arr, t_arr):
-      # solves min_alp param_inv * |alp - alp_prev|^2/2 + <alp, Dphi> + |alp|^2/2
-      alp_next = (param_inv * alp_prev + Dphi) / (1 + param_inv)
-      return alp_next
-    def alp_update_fn(alp_prev, Dphi, rho, sigma, x_arr, t_arr):  # Dphi is a tuple including D11_phi, D12_phi, D21_phi, D22_phi
-      alp11_prev, alp12_prev, alp21_prev, alp22_prev = alp_prev  # [nt-1, nx, ny, 2]
-      D11_phi, D12_phi, D21_phi, D22_phi = Dphi  # [nt-1, nx, ny, 2]
-      eps = 1e-4
-      param_inv = (rho[...,None] + eps) / sigma  # [nt-1, nx, ny, 1]
-      alp11_next = alp_update_base_fn(alp11_prev, D11_phi, param_inv, x_arr, t_arr)  # [nt-1, nx, ny, 2]
-      alp11_next *= indicator_11_fn(alp11_next, x_arr, t_arr)  # [nt-1, nx, ny, 2]
-      alp12_next = alp_update_base_fn(alp12_prev, D12_phi, param_inv, x_arr, t_arr)
-      alp12_next *= indicator_12_fn(alp12_next, x_arr, t_arr)
-      alp21_next = alp_update_base_fn(alp21_prev, D21_phi, param_inv, x_arr, t_arr)
-      alp21_next *= indicator_21_fn(alp21_next, x_arr, t_arr)
-      alp22_next = alp_update_base_fn(alp22_prev, D22_phi, param_inv, x_arr, t_arr)
-      alp22_next *= indicator_22_fn(alp22_next, x_arr, t_arr)
-      return (alp11_next, alp12_next, alp21_next, alp22_next)
-  
-  if ndim == 1:
     Functions = namedtuple('Functions', ['f_fn', 'numerical_L_fn', 'alp_update_fn',
                                         'H_plus_fn', 'H_minus_fn'])
     fns_dict = Functions(H_plus_fn=H_plus_fn, H_minus_fn=H_minus_fn,
@@ -128,11 +127,8 @@ def set_up_example_fns(egno, ndim):
                         alp_update_fn = alp_update_fn)
   elif ndim == 2:
     Functions = namedtuple('Functions', ['f_fn', 'numerical_L_fn', 'alp_update_fn', 
-                                          'indicator_11_fn', 'indicator_12_fn', 'indicator_21_fn', 'indicator_22_fn',
                                           'Hx_plus_fn', 'Hx_minus_fn', 'Hy_plus_fn', 'Hy_minus_fn'])
     fns_dict = Functions(f_fn = f_fn, numerical_L_fn = numerical_L_fn, alp_update_fn = alp_update_fn,
-                        indicator_11_fn = indicator_11_fn, indicator_12_fn = indicator_12_fn,
-                        indicator_21_fn = indicator_21_fn, indicator_22_fn = indicator_22_fn,
                         Hx_plus_fn=H_plus_fn, Hx_minus_fn=H_minus_fn, Hy_plus_fn=H_plus_fn, Hy_minus_fn=H_minus_fn)
   else:
     raise ValueError("ndim {} not implemented".format(ndim))

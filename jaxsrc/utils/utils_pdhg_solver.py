@@ -147,15 +147,10 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
   else:
     nx, ny = nspatial
     rho0 = jnp.zeros([time_step_per_PDHG-1, nx, ny]) + c_on_rho
-    # TODO: this is for debug
-    # alp1_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    # alp2_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    # alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    # alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
-    alp1_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    alp2_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
-    alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny])
+    alp1_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, 1])
+    alp2_x_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, 1])
+    alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, 1])
+    alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, 1])
     alp0 = (alp1_x_0, alp2_x_0, alp1_y_0, alp2_y_0)
   print('shape of phi0: ', jnp.shape(phi0), flush = True)
   print('shape of rho0: ', jnp.shape(rho0), flush = True)
