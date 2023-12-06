@@ -56,11 +56,11 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
                                       fns_dict, x_arr, t_arr, ndim)
 
     # primal error
-    err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.maximum(jnp.linalg.norm(phi_prev), 1.0)
+    err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.linalg.norm(phi_prev)
     # err2: dual error
-    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+    err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.linalg.norm(rho_prev)
     for alp_p, alp_n in zip(alp_prev, alp_next):
-      err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.maximum(jnp.linalg.norm(alp_p), 1.0)
+      err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.linalg.norm(alp_p)
     # err3: equation error
     err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
 
@@ -70,7 +70,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
       tf.summary.scalar('equation error', err3, step = tfrecord_ind + i)
     
     error = jnp.array([err1, err2, err3])
-    if error[2] < eps:
+    if error[0] < eps and error[1] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
     if jnp.isnan(error[0]) or jnp.isnan(error[1]):
