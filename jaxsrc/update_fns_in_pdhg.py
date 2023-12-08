@@ -29,7 +29,7 @@ def get_f_vals_1d(fns_dict, alp, x_arr, t_arr):
 def get_f_vals_2d(fns_dict, alp, x_arr, t_arr):
   ''' @ parameters:
       fns_dict: named tuple of functions, containing f_fn
-      alp: tuple of alp1_x, alp2_x, alp1_y, alp2_y, each term is [nt-1, nx, ny, 1]
+      alp: tuple of alp1_x, alp2_x, alp1_y, alp2_y, each term is [nt-1, nx, ny, n_ctrl]
       x_arr: vec that can be broadcasted to [nt-1, nx, ny]
       t_arr: vec that can be broadcasted to [nt-1, nx, ny]
     @ return:
@@ -40,9 +40,9 @@ def get_f_vals_2d(fns_dict, alp, x_arr, t_arr):
   f1_x = f1_x * (f1_x >= 0.0)  # [nt-1, nx, ny]
   f2_x = fns_dict.f_fn(alp2_x, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
   f2_x = f2_x * (f2_x < 0.0)  # [nt-1, nx, ny]
-  f1_y = fns_dict.f_fn(alp1_y, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
+  f1_y = fns_dict.f_fn(alp1_y, x_arr, t_arr)[...,1]  # [nt-1, nx, ny]
   f1_y = f1_y * (f1_y >= 0.0)  # [nt-1, nx, ny]
-  f2_y = fns_dict.f_fn(alp2_y, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
+  f2_y = fns_dict.f_fn(alp2_y, x_arr, t_arr)[...,1]  # [nt-1, nx, ny]
   f2_y = f2_y * (f2_y < 0.0)  # [nt-1, nx, ny]
   return f1_x, f2_x, f1_y, f2_y
 
@@ -81,7 +81,6 @@ def compute_cont_residual_1d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
   return res
 
 def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
-  alp_11, alp_12, alp_21, alp_22 = alp
   dx, dy = dspatial
   eps = 1e-4
   f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(fns_dict, alp, x_arr, t_arr)
