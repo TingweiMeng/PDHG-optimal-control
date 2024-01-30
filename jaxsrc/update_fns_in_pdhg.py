@@ -30,6 +30,45 @@ def get_Dalp_2d(Df_fn, DL_fn, rho, alp, alp_sum, rho_prev, alp_prev, x_arr, t_ar
   Dalp -= DL_fn(alp_sum, x_arr, t_arr) * rho  # [nt-1, nx, ny, n_ctrl]
   return Dalp
 
+
+def get_Dalp_1d(Df_fn, DL_fn, rho, alp, alp_sum, rho_prev, alp_prev, x_arr, t_arr, tau, Dphi):
+  ''' @ parameters:
+      Df_fn: function, [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1]
+      DL_fn: function, [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1]
+      rho: [nt-1, nx, 1]
+      alp: [nt-1, nx, 1]
+      alp_sum: [nt-1, nx, 1] (alp1_x + alp2_x)
+      rho_prev: [nt-1, nx, 1]
+      alp_prev: [nt-1, nx, 1]
+      x_arr: vec that can be broadcasted to [nt-1, nx]
+      t_arr: vec that can be broadcasted to [nt-1, nx]
+      tau: float
+      Dphi: [nt-1, nx, 1]
+    @ return:
+      Dalp: [nt-1, nx, 1]
+  '''
+  Dalp = -Df_fn(alp, x_arr, t_arr) * Dphi * rho - rho / tau * (alp * rho - alp_prev * rho_prev)  # [nt-1, nx, ny, n_ctrl]
+  Dalp -= DL_fn(alp_sum, x_arr, t_arr) * rho  # [nt-1, nx, ny, n_ctrl]
+  return Dalp
+
+def get_D2alp_1d(Hf_fn, HL_fn, rho, alp, alp_sum, x_arr, t_arr, tau, Dphi):
+  ''' @ parameters:
+      Hf_fn: function, [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1, 1]
+      HL_fn: function, [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1, 1]
+      rho: [nt-1, nx, 1, 1]
+      alp: [nt-1, nx, 1]
+      alp_sum: [nt-1, nx, 1] (alp1_x + alp2_x)
+      x_arr: vec that can be broadcasted to [nt-1, nx]
+      t_arr: vec that can be broadcasted to [nt-1, nx]
+      tau: float
+      Dphi: [nt-1, nx, 1, 1]
+    @ return:
+      D2alp: [nt-1, nx, 1, 1]
+  '''
+  D2alp = -Hf_fn(alp, x_arr, t_arr) * Dphi * rho - rho ** 2 / tau  # [nt-1, nx, 1, 1]
+  D2alp -= HL_fn(alp_sum, x_arr, t_arr) * rho  # [nt-1, nx, 1, 1]
+  return D2alp
+
 def get_D2alp_2d(Hf_fn, HL_fn, rho, alp, alp_sum, x_arr, t_arr, tau, Dphi):
   ''' @ parameters:
       Hf_fn: function, [nt-1, nx, ny, n_ctrl], x_arr, t_arr -> [nt-1, nx, ny, n_ctrl, n_ctrl]
@@ -48,6 +87,26 @@ def get_D2alp_2d(Hf_fn, HL_fn, rho, alp, alp_sum, x_arr, t_arr, tau, Dphi):
   D2alp = -Hf_fn(alp, x_arr, t_arr) * Dphi * rho - rho ** 2 / tau * mat_eyes  # [nt-1, nx, ny, n_ctrl, n_ctrl]
   D2alp -= HL_fn(alp_sum, x_arr, t_arr) * rho  # [nt-1, nx, ny, n_ctrl, n_ctrl]
   return D2alp
+
+def get_DalpDrho_1d(Df_fn, DL_fn, rho, alp, alp_sum, rho_prev, alp_prev, x_arr, t_arr, tau, Dphi):
+  ''' @ parameters:
+      Df_fn: function, [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1]
+      DL_fn: function, [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1]
+      rho: [nt-1, nx, 1]
+      alp: [nt-1, nx, 1]
+      alp_sum: [nt-1, nx, 1] (alp1_x + alp2_x)
+      rho_prev: [nt-1, nx, 1]
+      alp_prev: [nt-1, nx, 1]
+      x_arr: vec that can be broadcasted to [nt-1, nx]
+      t_arr: vec that can be broadcasted to [nt-1, nx]
+      tau: float
+      Dphi: [nt-1, nx, 1]
+    @ return:
+      Dalp: [nt-1, nx, 1]
+  '''
+  DalpDrho = -Df_fn(alp, x_arr, t_arr) * Dphi - (2* alp * rho - alp_prev * rho_prev) / tau  # [nt-1, nx, 1]
+  DalpDrho -= DL_fn(alp_sum, x_arr, t_arr)  # [nt-1, nx, 1]
+  return DalpDrho
 
 def get_DalpDrho_2d(Df_fn, DL_fn, rho, alp, alp_sum, rho_prev, alp_prev, x_arr, t_arr, tau, Dphi):
   ''' @ parameters:
@@ -131,6 +190,53 @@ def get_diff_in_Newton_2d(x, arg_other, fns_dict):
   print('Hess_ret: ', Hess_ret)
   return diff_ret, Hess_ret
 
+
+@partial(jax.jit, static_argnames=("fns_dict",))
+def get_diff_in_Newton_1d(x, arg_other, fns_dict):
+  rho = x[...,0:1]  # [nt-1, nx, 1]
+  alp1_x = x[...,1:2]  # [nt-1, nx, 1]
+  alp2_x = x[...,2:3]  # [nt-1, nx, 1]
+  Dx_right, Dx_left, _, _, Dt_minus_diffusion, x_arr, t_arr, tau, \
+    rho_prev, alp1_x_prev, alp2_x_prev, _, _ = arg_other
+  Df_fn = fns_dict.Df_fn  # [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1]
+  DL_fn = fns_dict.DL_fn  # [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1]
+  Hf_fn = fns_dict.Hf_fn  # [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1, 1]
+  HL_fn = fns_dict.HL_fn  # [nt-1, nx, 1], x_arr, t_arr -> [nt-1, nx, 1, 1]
+  alp_sum = alp1_x + alp2_x
+  rho_prev = rho_prev[..., None]  # [nt-1, nx, 1]
+  Dx_right = Dx_right[..., None]  # [nt-1, nx, 1]
+  Dx_left = Dx_left[..., None]  # [nt-1, nx, 1]
+  Dalp1_x = get_Dalp_1d(Df_fn, DL_fn, rho, alp1_x, alp_sum, rho_prev, alp1_x_prev, x_arr, t_arr, tau, Dx_right)
+  Dalp2_x = get_Dalp_1d(Df_fn, DL_fn, rho, alp2_x, alp_sum, rho_prev, alp2_x_prev, x_arr, t_arr, tau, Dx_left)
+  f1_x, f2_x = get_f_vals_1d(fns_dict, (alp1_x, alp2_x,), x_arr, t_arr)  # [nt-1, nx]
+  vec = Dt_minus_diffusion[...,None]  # [nt-1, nx, 1]
+  vec -= Dx_right * f1_x[...,None] + Dx_left * f2_x[...,None]
+  vec -= fns_dict.numerical_L_fn((alp1_x, alp2_x,), x_arr, t_arr)[...,None]  # [nt-1, nx, 1]
+  Drho = -vec - (rho - rho_prev) / tau  # [nt-1, nx, 1]
+  Drho -= (alp1_x * (alp1_x * rho - alp1_x_prev * rho_prev) + alp2_x * (alp2_x * rho - alp2_x_prev * rho_prev)) / tau  # [nt-1, nx, 1]
+  diff_ret = jnp.concatenate([Drho, Dalp1_x, Dalp2_x], axis = -1)  # [nt-1, nx, 3]
+  # compute Hessian
+  Dalp1xDrho = get_DalpDrho_1d(Df_fn, DL_fn, rho, alp1_x, alp_sum, rho_prev, alp1_x_prev, x_arr, t_arr, tau, Dx_right)  # [nt-1, nx, ny, n_ctrl]
+  Dalp2xDrho = get_DalpDrho_1d(Df_fn, DL_fn, rho, alp2_x, alp_sum, rho_prev, alp2_x_prev, x_arr, t_arr, tau, Dx_left)  # [nt-1, nx, ny, n_ctrl]
+  rho = rho[..., None]  # [nt-1, nx, 1, 1]
+  Dx_right = Dx_right[..., None]  # [nt-1, nx, 1, 1]
+  Dx_left = Dx_left[..., None]  # [nt-1, nx, 1, 1]
+  D2alp1_x = get_D2alp_1d(Hf_fn, HL_fn, rho, alp1_x, alp_sum, x_arr, t_arr, tau, Dx_right)  # [nt-1, nx, 1,1]
+  D2alp2_x = get_D2alp_1d(Hf_fn, HL_fn, rho, alp2_x, alp_sum, x_arr, t_arr, tau, Dx_left)  # [nt-1, nx, 1,1]
+  Dalp1Dalp2 = -HL_fn(alp_sum, x_arr, t_arr) * rho  # [nt-1, nx, 1, 1]
+  D2rho = -(alp1_x **2 + alp2_x **2) / tau  # [nt-1, nx, 1]
+  D2rho = jnp.sum(D2rho, axis = -1, keepdims = True) - 1/tau  # [nt-1, nx, 1]
+  eps = 1e-6
+  Hess_rho = jnp.concatenate([D2rho + eps, Dalp1xDrho, Dalp2xDrho], axis = -1)  # [nt-1, nx, 3]
+  Hess_alp1_x = jnp.concatenate([Dalp1xDrho[...,None], D2alp1_x + eps, Dalp1Dalp2], axis = -1)  # [nt-1, nx, 1, 3]
+  Hess_alp2_x = jnp.concatenate([Dalp2xDrho[...,None], Dalp1Dalp2, D2alp2_x + eps], axis = -1)  # [nt-1, nx, 1, 3]
+  Hess_ret = jnp.concatenate([Hess_rho[...,None,:], Hess_alp1_x, Hess_alp2_x], axis = -2)  # [nt-1, nx, 3, 3]
+  # print('diff_ret shape: ', diff_ret.shape)
+  # print('Hess_ret shape: ', Hess_ret.shape)
+  # print('Hessian: ', Hess_ret)
+  # print('Hessian determinant: ', jnp.min(jnp.abs(jnp.linalg.det(Hess_ret))))
+  return diff_ret, Hess_ret
+
 @partial(jax.jit, static_argnames=("fns_dict",))
 def proj_rhoalp_2d(fns_dict, x0, arg_other):
   rho = x0[...,0:1]
@@ -152,11 +258,40 @@ def proj_rhoalp_2d(fns_dict, x0, arg_other):
   x_ret = jnp.concatenate([rho, alp1_x, alp2_x, alp1_y, alp2_y], axis = -1)
   return x_ret
 
+@partial(jax.jit, static_argnames=("fns_dict",))
+def proj_rhoalp_1d(fns_dict, x0, arg_other):
+  rho = x0[...,0:1]
+  alp1_x = x0[...,1:2]
+  alp2_x = x0[...,2:3]
+  Dx_right, Dx_left, Dy_right, Dy_left, Dt_minus_diffusion, x_arr, t_arr, tau, \
+    rho_prev, alp1_x_prev, alp2_x_prev, alp1_y_prev, alp2_y_prev = arg_other
+  rho = jnp.maximum(rho, 0.0)
+  f1_alp1_x = fns_dict.f_fn(alp1_x, x_arr, t_arr)  # [nt-1, nx, 1]
+  alp1_x *= (f1_alp1_x >= 0.0)
+  f1_alp2_x = fns_dict.f_fn(alp2_x, x_arr, t_arr)  # [nt-1, nx, 1]
+  alp2_x *= (f1_alp2_x < 0.0)
+  x_ret = jnp.concatenate([rho, alp1_x, alp2_x], axis = -1)  # [nt-1, nx, 3]
+  return x_ret
+
 def Newton_iter_2d(fns_dict, x0, args_other, N_max = 10):
   for i in range(N_max):
     Df, D2f = get_diff_in_Newton_2d(x0, args_other, fns_dict)
     x1 = x0 - jnp.linalg.solve(D2f, Df)
     x0 = proj_rhoalp_2d(fns_dict, x1, args_other)
+  return x0
+
+def Newton_iter_1d(fns_dict, x0, args_other, N_max = 10, eps = 1e-6):
+  for i in range(N_max):
+    Df, D2f = get_diff_in_Newton_1d(x0, args_other, fns_dict)
+    x1 = x0 - jnp.linalg.solve(D2f, Df)
+    x_prev = x0  # [nt-1, nx, 3]
+    x0 = proj_rhoalp_1d(fns_dict, x1, args_other)
+    err = jnp.sum((x0 - x_prev) ** 2, axis = (0,1)) / jnp.sum(x0 ** 2, axis = (0,1))
+    err = jnp.sum(err)
+    # err = jnp.max(jnp.abs(x0 - x_prev))
+    if err < eps:
+      print('Newton iter ', i, ' converged, err = ', err)
+      break
   return x0
 
 def get_f_vals_1d(fns_dict, alp, x_arr, t_arr):
@@ -247,6 +382,9 @@ def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
 def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
   vec = compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   rho_next = rho_prev + sigma * vec
+  # alp1, alp2 = alp  # [nt-1, nx, 1]
+  # coeff = alp1[...,0] ** 2 + alp2[...,0] ** 2 + 1
+  # rho_next = rho_prev + sigma * vec / coeff
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
@@ -308,13 +446,56 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspati
   # print('alp_prev: ', alp_prev, flush=True)
   alp_next = update_alp(alp_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr)
   rho_next = update_rho(rho_prev, phi_bar, alp_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr)
-  err = jnp.linalg.norm(rho_next - rho_prev) / jnp.maximum(jnp.linalg.norm(rho_prev), 1.0)
+  err = jnp.sum((rho_next - rho_prev) ** 2) / jnp.sum(rho_next ** 2)  # scalar
   for alp_p, alp_n in zip(alp_prev, alp_next):
-    err = jnp.maximum(err, jnp.linalg.norm(alp_n - alp_p) / jnp.maximum(jnp.linalg.norm(alp_p), 1.0))
+    err += jnp.sum((alp_n - alp_p) ** 2) / jnp.sum(alp_n ** 2)  # scalar
   return rho_next, alp_next, err
 
+def update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
+                   rho_alp_iters=10, eps=1e-7):
+  '''
+  @ parameters:
+  fns_dict: dict of functions, see the function set_up_example_fns in set_fns.py
+  '''
+  for j in range(rho_alp_iters):
+    rho_next, alp_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl,
+                                                              x_arr, t_arr, fns_dict, ndim)
+    if err < eps:
+      break
+    rho_prev = rho_next
+    alp_prev = alp_next
+  return rho_next, alp_next
 
-def update_dual(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
+def update_dual_Newton_1d(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
+                   rho_alp_iters=10, eps=1e-6):
+  '''
+  @ parameters:
+  fns_dict: dict of functions, see the function set_up_example_fns in set_fns.py
+  '''
+  for j in range(rho_alp_iters):
+    rho_next, alp_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl,
+                                                              x_arr, t_arr, fns_dict, ndim)
+    # if err < eps:
+    #   print('alternative iter ', j, ' converged, err = ', err)
+    #   break
+    rho_prev = rho_next
+    alp_prev = alp_next
+  # Newton  
+  # alp1_x_prev, alp2_x_prev = alp_prev
+  # x0 = jnp.concatenate([rho_prev[...,None], alp1_x_prev, alp2_x_prev], axis = -1)  # [nt-1, nx, 3]
+  # dx = dspatial[0]
+  # Dx_right = Dx_right_decreasedim(phi_bar, dx)  # [nt-1, nx]
+  # Dx_left = Dx_left_decreasedim(phi_bar, dx)  # [nt-1, nx]
+  # Dt_minus_diffusion = Dt_decreasedim(phi_bar, dt) - epsl * Dxx_decreasedim(phi_bar, dx)
+  # args_other = (Dx_right, Dx_left, None, None, Dt_minus_diffusion, x_arr, t_arr, sigma, rho_prev, alp1_x_prev, alp2_x_prev, None, None)
+  # New_ret = Newton_iter_1d(fns_dict, x0, args_other, eps = eps)
+  # rho_next = New_ret[...,0]
+  # alp1_x_next = New_ret[...,1:2]
+  # alp2_x_next = New_ret[...,2:3]
+  # alp_next = (alp1_x_next, alp2_x_next)
+  return rho_next, alp_next
+
+def update_dual_Newton_2d(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim,
                    rho_alp_iters=10, eps=1e-7):
   '''
   @ parameters:

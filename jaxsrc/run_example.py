@@ -92,13 +92,20 @@ def main(argv):
     def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
       HJ_residual = solver.compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
       return jnp.mean(jnp.abs(HJ_residual))
+    if FLAGS.method == 0:
+      fn_update_dual = pdhg.update_dual_alternative
+    else:
+      fn_update_dual = pdhg.update_dual_Newton_1d
   else:
     fn_update_primal = pdhg.update_primal_2d
     def fn_compute_err(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
       HJ_residual = solver.compute_HJ_residual_EO_2d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
       return jnp.mean(jnp.abs(HJ_residual))
-  fn_update_dual = pdhg.update_dual
-
+    if FLAGS.method == 0:
+      fn_update_dual = pdhg.update_dual_alternative
+    else:
+      fn_update_dual = pdhg.update_dual_Newton_2d
+  
   if ndim == 1:
     dspatial = (dx, )
     nspatial = (nx, )
@@ -173,5 +180,7 @@ if __name__ == '__main__':
   flags.DEFINE_float('pow', 1.0, 'power in preconditioning')
   flags.DEFINE_float('Ct', 1.0, 'constant in preconditioning')
   flags.DEFINE_integer('numerical_L_ind', 0, 'index of numerical L')
+
+  flags.DEFINE_integer('method', 0, 'method: 0 for alternative update rho and alp, 1 for Newton')
   
   app.run(main)

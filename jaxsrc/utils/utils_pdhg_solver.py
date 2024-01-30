@@ -49,11 +49,19 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
   results_all = []
 
   for i in range(N_maxiter):
+    # if i == 0:
+    #   err_tol = eps
+    # elif err1 > 1e-4 or err2 > 1e-4:
+    #   err_tol = eps
+    # else:
+    #   err_tol = min(err1, err2) / 10
+    # print('err_tol: ', err_tol, flush = True)
+    err_tol = eps
     phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, alp_prev, tau_phi, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
     rho_next, alp_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, alp_prev, tau_rho, dt, dspatial, epsl, 
-                                      fns_dict, x_arr, t_arr, ndim)
+                                      fns_dict, x_arr, t_arr, ndim, eps = err_tol)
 
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.linalg.norm(phi_prev)
@@ -62,14 +70,14 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
     for alp_p, alp_n in zip(alp_prev, alp_next):
       err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.linalg.norm(alp_p)
     # err3: equation error
-    err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
+    # err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
 
     if tfboard:
       tf.summary.scalar('primal error', err1, step = tfrecord_ind + i)
       tf.summary.scalar('dual error', err2, step = tfrecord_ind + i)
-      tf.summary.scalar('equation error', err3, step = tfrecord_ind + i)
+      # tf.summary.scalar('equation error', err3, step = tfrecord_ind + i)
     
-    error = jnp.array([err1, err2, err3])
+    error = jnp.array([err1, err2])
     if error[0] < eps and error[1] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
@@ -79,8 +87,8 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
     if print_freq > 0 and i % print_freq == 0:
       results_all.append((i, phi_prev, rho_prev, alp_next))
       error_all.append(error)
-      print('iteration {}, primal error {:.2E}, dual error {:.2E}, eqt error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
-                  error[0],  error[1],  error[2], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
+      print('iteration {}, primal error {:.2E}, dual error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
+                  error[0],  error[1], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
       # plot 
       # if ndim == 2:
       #   fig = plt.figure()
