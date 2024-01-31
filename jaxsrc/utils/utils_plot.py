@@ -4,7 +4,7 @@ from absl import app, flags
 import matplotlib.pyplot as plt
 from einshape import jax_einshape as einshape
 import os
-from print_n_plot import read_solution
+# from print_n_plot import read_solution
 import utils.utils as utils
 import tensorflow as tf
 
@@ -108,35 +108,35 @@ def save_fig(fig, filename, tfboard = True, foldername = None):
   plt.close(fig)
 
 def main(argv):
-  for key, value in FLAGS.__flags.items():
-    print(value.name, ": ", value._value, flush=True)
+  # for key, value in FLAGS.__flags.items():
+  #   print(value.name, ": ", value._value, flush=True)
 
-  epsl = FLAGS.epsl
-  T_divisor = FLAGS.T_divisor
-  egno = FLAGS.egno
-  num_filename = FLAGS.numerical_sol_filename
-  ndim = FLAGS.ndim
+  # epsl = FLAGS.epsl
+  # T_divisor = FLAGS.T_divisor
+  # egno = FLAGS.egno
+  # num_filename = FLAGS.numerical_sol_filename
+  # ndim = FLAGS.ndim
 
-  T = 1
-  if ndim == 1:
-    period_spatial = [2]
-    plot_fn = plot_solution_1d
-  else:
-    period_spatial = [2, 2]
-    plot_fn = plot_solution_2d
+  # T = 1
+  # if ndim == 1:
+  #   period_spatial = [2]
+  #   plot_fn = plot_solution_1d
+  # else:
+  #   period_spatial = [2, 2]
+  #   plot_fn = plot_solution_2d
 
-  plot_foldername = "eg{}_{}d/".format(egno, ndim)
-  if FLAGS.parent_folder != '':
-    plot_foldername = FLAGS.parent_folder + '/' + plot_foldername
-  if not os.path.exists(plot_foldername):
-    os.makedirs(plot_foldername)
+  # plot_foldername = "eg{}_{}d/".format(egno, ndim)
+  # if FLAGS.parent_folder != '':
+  #   plot_foldername = FLAGS.parent_folder + '/' + plot_foldername
+  # if not os.path.exists(plot_foldername):
+  #   os.makedirs(plot_foldername)
 
-  num_sol = read_solution(num_filename)
-  if num_sol.ndim != ndim + 1:
-    raise ValueError("num_sol.ndim != ndim + 1")
-  nt = num_sol.shape[0]
-  n_spatial = num_sol.shape[1:]  
-  plot_fn(num_sol, nt, n_spatial, T, period_spatial, plot_foldername, 'solution', epsl, T_divisor = T_divisor)
+  # num_sol = read_solution(num_filename)
+  # if num_sol.ndim != ndim + 1:
+  #   raise ValueError("num_sol.ndim != ndim + 1")
+  # nt = num_sol.shape[0]
+  # n_spatial = num_sol.shape[1:]  
+  # plot_fn(num_sol, nt, n_spatial, T, period_spatial, plot_foldername, 'solution', epsl, T_divisor = T_divisor)
 
   print('plotting done')
 

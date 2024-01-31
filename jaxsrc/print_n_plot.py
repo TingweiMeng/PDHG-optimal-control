@@ -6,7 +6,7 @@ import os
 from set_fns import set_up_example_fns
 from solver import compute_xarr, compute_ground_truth, compute_err_1d, compute_err_2d
 from solver import compute_HJ_residual_EO_1d_general, compute_HJ_residual_EO_2d_general
-from solver import read_solution, read_raw_file, save_raw
+from solver import load_solution, save
 import utils.utils_plot as utils_plot
 
 
@@ -57,7 +57,7 @@ def main(argv):
     if not os.path.exists(true_filename):
       print('true solution file {} does not exist, exit'.format(true_filename))
       return
-    true_sol = read_raw_file(true_filename)
+    true_sol = None # TODO
     if true_sol.ndim != ndim + 1:
       print('true solution file {} has wrong dimension, exit'.format(true_filename))
       return
@@ -70,8 +70,8 @@ def main(argv):
     else:
       n_spatial_dense = [nx_dense, ny_dense]
     true_sol = compute_ground_truth(egno, nt_dense, n_spatial_dense, ndim, T, period_spatial, epsl=epsl)
-    # save true solution
-    save_raw(true_filename, true_sol)
+    # save true solution: TODO
+    # save_raw(true_filename, true_sol)
     # plot true solution
     if not jnp.any(jnp.isnan(true_sol)):
       n_spatial_dense = true_sol.shape[1:]
@@ -83,7 +83,8 @@ def main(argv):
   nspatials = []
   nts = []
   for num_filename in num_filenames:
-    num_sol = read_solution(num_filename)
+    results, _ = load_solution(num_filename)
+    num_sol = results[-1][1]
     if num_sol.ndim != ndim + 1:
       print('numerical solution file {} has wrong dimension, exit'.format(num_filename))
       return
