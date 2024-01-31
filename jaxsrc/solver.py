@@ -81,13 +81,10 @@ def save(save_dir, filename, results):
     pickle.dump(results, file)
     print('saved to {}'.format(file), flush = True)
 
-def save_raw(filename, results):
-  foldername = os.path.dirname(filename)
-  if not os.path.exists(foldername):
-    os.makedirs(foldername)
-  with open(filename, 'wb') as file:
-    pickle.dump(results, file)
-    print('saved to {}'.format(file), flush = True)
+def load_solution(filename):
+  with open(filename, 'rb') as f:
+    results, errors = pickle.load(f)
+  return results, errors
 
 def compute_xarr(ndim, n_spatial, period_spatial):
   '''
@@ -253,17 +250,6 @@ def compute_EO_forward_solution_2d_general(nt, dt, dspatial, fns_dict, g, x_arr,
   print("phi dimension {}".format(jnp.shape(phi_arr)))
   return phi_arr
 
-def read_solution(filename):
-  with open(filename, 'rb') as f:
-    results, errors = pickle.load(f)
-  # compute errors
-  phi = results[-1][1]
-  return phi
-
-def read_raw_file(filename):
-  with open(filename, 'rb') as f:
-    result = pickle.load(f)
-  return result
 
 def get_sol_on_coarse_grid_1d(sol, coarse_nt, coarse_nx):
   nt, nx = jnp.shape(sol)

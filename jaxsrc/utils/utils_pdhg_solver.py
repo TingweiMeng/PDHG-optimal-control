@@ -7,7 +7,7 @@ from utils.utils_diff_op import Dx_right_decreasedim, Dx_left_decreasedim
 import utils.utils as utils
 
 
-def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
+def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
                    ndim, dt, dspatial, c_on_rho, epsl = 0.0, stepsz_param=0.9, fv=None,
                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False, tfrecord_ind = 0):
   '''
@@ -16,7 +16,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
                         output p_next, and other parameters
     fn_update_dual: function to update dual variable, takes d, p, delta_d, and other parameters
                         output d_next, and other parameters
-    fn_compute_err: function to compute error, take phi and other parameters
     fns_dict: dict of functions, see the function set_up_example_fns in solver.py
     phi0: [nt, nx] for 1d, [nt, nx, ny] for 2d
     rho0: [nt-1, nx] for 1d, [nt-1, nx, ny] for 2d
@@ -69,13 +68,10 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
     err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.linalg.norm(rho_prev)
     for alp_p, alp_n in zip(alp_prev, alp_next):
       err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.linalg.norm(alp_p)
-    # err3: equation error
-    # err3 = fn_compute_err(phi_next, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
 
     if tfboard:
       tf.summary.scalar('primal error', err1, step = tfrecord_ind + i)
       tf.summary.scalar('dual error', err2, step = tfrecord_ind + i)
-      # tf.summary.scalar('equation error', err3, step = tfrecord_ind + i)
     
     error = jnp.array([err1, err2])
     if error[0] < eps and error[1] < eps:
@@ -123,13 +119,13 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_di
   return results_all, error_all
 
 
-def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, g, x_arr, 
+def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr, 
                     ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     epsl = 0.0, stepsz_param=0.9, n_ctrl = None, fv=None,
                     N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False):
   '''
   @ parameters:
-    fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, x_arr: see PDHG_solver_oneiter
+    fn_update_primal, fn_update_dual, fns_dict, x_arr: see PDHG_solver_oneiter
     g: [1, nx] for 1d, [1, nx, ny] for 2d
     ndim, nt, nspatial, c_on_rho, epsl, stepsz_param, fv: see PDHG_solver_oneiter
     dt: scalar, time step size
@@ -185,7 +181,7 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict, 
       t_arr = t_arr[:,None,None]  # [time_step_per_PDHG-1, 1, 1]
 
     while True:  # decrease step size if necessary
-      results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fn_compute_err, fns_dict,
+      results_all, errs = PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict,
                                     phi0, rho0, alp0, x_arr, t_arr, ndim, dt, dspatial, c_on_rho, 
                                     epsl = epsl, stepsz_param=stepsz_param, fv=fv,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, 

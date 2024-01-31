@@ -6,6 +6,7 @@ from einshape import jax_einshape as einshape
 import os
 from print_n_plot import read_solution
 import utils.utils as utils
+import tensorflow as tf
 
 def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
   ''' plot solution and error of 1d HJ PDE
@@ -24,11 +25,13 @@ def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
   # plot solution
   phi_trans = einshape('ij->ji', phi)  # [nx, nt]
   fig = plt.figure()
-  plt.contourf(x_mesh, t_mesh, phi_trans)
+  plt.pcolormesh(x_mesh, t_mesh, phi_trans)
+  plt.contour(x_mesh, t_mesh, phi_trans, colors='k')
   plt.colorbar()
   plt.xlabel('x')
   plt.ylabel('t')
-  plt.title(title)
+  if title != '' and title is not None:
+    plt.title(title)
   if tfboard:
     return utils.plot_to_image(fig)
   else:
@@ -60,12 +63,49 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True)
     # contourf plot
     ct = ax.contourf(x_arr[...,0], x_arr[...,1], phi[ind,...])  # TODO: check domain 
     fig.colorbar(ct, ax=ax)
-  fig.suptitle(title)
+  if title != '' and title is not None:
+    fig.suptitle(title)
   if tfboard:
     return utils.plot_to_image(fig)
   else:
     return fig
     
+def plot_traj_1d(traj, t_arr, title = '', tfboard = True):
+  ''' traj: [n_samples, nt], t_arr: [nt] '''
+  fig = plt.figure()
+  plt.plot(t_arr, traj.T)
+  plt.xlabel('t')
+  if title != '' and title is not None:
+    plt.title(title)
+  if tfboard:
+    return utils.plot_to_image(fig)
+  else:
+    return fig
+  
+def plot_traj_2d(traj, title = '', tfboard = True):
+  ''' traj: [n_samples, nt, 2], t_arr: [nt] '''
+  fig = plt.figure()
+  plt.plot(traj[...,0].T, traj[...,1].T)
+  plt.xlabel('x')
+  plt.ylabel('y')
+  if title != '' and title is not None:
+    plt.title(title)
+  if tfboard:
+    return utils.plot_to_image(fig)
+  else:
+    return fig
+
+def save_fig(fig, filename, tfboard = True, foldername = None):
+  # filename is the title for tfboard if tfboard is True
+  if tfboard:
+    tf.summary.image(filename, fig, step = 0)
+  else:
+    if foldername is not None:
+      filename = foldername + filename
+      if not os.path.exists(foldername):
+        os.makedirs(foldername)
+    fig.savefig(filename + '.png')
+  plt.close(fig)
 
 def main(argv):
   for key, value in FLAGS.__flags.items():
