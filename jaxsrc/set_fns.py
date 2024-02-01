@@ -67,7 +67,6 @@ def set_up_example_fns(egno, ndim, numerical_L_ind):
     egno: int
     ndim: int
   @ return:
-    J: initial condition, function
     fns_dict: named tuple of functions
   '''
   print('egno: ', egno, flush=True)
