@@ -25,8 +25,9 @@ def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
   # plot solution
   phi_trans = einshape('ij->ji', phi)  # [nx, nt]
   fig = plt.figure()
-  plt.pcolormesh(x_mesh, t_mesh, phi_trans)
-  plt.contour(x_mesh, t_mesh, phi_trans, colors='k')
+  # plt.pcolormesh(x_mesh, t_mesh, phi_trans)
+  # plt.contour(x_mesh, t_mesh, phi_trans, colors='k')
+  plt.contourf(x_mesh, t_mesh, phi_trans)
   plt.colorbar()
   plt.xlabel('x')
   plt.ylabel('t')
@@ -71,9 +72,9 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True)
     return fig
     
 def plot_traj_1d(traj, t_arr, title = '', tfboard = True):
-  ''' traj: [n_samples, nt], t_arr: [nt] '''
+  ''' traj: [nt, n_samples], t_arr: [nt] '''
   fig = plt.figure()
-  plt.plot(t_arr, traj.T)
+  plt.plot(t_arr, traj)
   plt.xlabel('t')
   if title != '' and title is not None:
     plt.title(title)
@@ -83,9 +84,9 @@ def plot_traj_1d(traj, t_arr, title = '', tfboard = True):
     return fig
   
 def plot_traj_2d(traj, title = '', tfboard = True):
-  ''' traj: [n_samples, nt, 2], t_arr: [nt] '''
+  ''' traj: [nt, n_samples, 2], t_arr: [nt] '''
   fig = plt.figure()
-  plt.plot(traj[...,0].T, traj[...,1].T)
+  plt.plot(traj[:,:,0], traj[:,:,1])
   plt.xlabel('x')
   plt.ylabel('y')
   if title != '' and title is not None:
@@ -101,11 +102,12 @@ def save_fig(fig, filename, tfboard = True, foldername = None):
     tf.summary.image(filename, fig, step = 0)
   else:
     if foldername is not None:
-      filename = foldername + filename
+      filename = os.path.join(foldername, filename)
       if not os.path.exists(foldername):
         os.makedirs(foldername)
     fig.savefig(filename + '.png')
-  plt.close(fig)
+    print('figure saved as', filename + '.png', flush=True)
+  # plt.close(fig)
 
 def main(argv):
   # for key, value in FLAGS.__flags.items():
