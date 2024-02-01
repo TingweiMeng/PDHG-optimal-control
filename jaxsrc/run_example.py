@@ -286,6 +286,13 @@ def main(argv):
       if ndim == 2:
         fig_alp = plot_fn(alp[i,...,1], x_arr, t_arr[:-1,...], tfboard = FLAGS.tfboard)
         utils_plot.save_fig(fig_alp, alp_titles[i] + '_y', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+    # plot sum of alp
+    alp_sum = jnp.sum(alp, axis = 0)  # [nt-1, nx, ny, nstate] or [nt-1, nx, nstate]
+    fig_alp_sum = plot_fn(alp_sum[...,0], x_arr, t_arr[:-1,...], tfboard = FLAGS.tfboard)
+    utils_plot.save_fig(fig_alp_sum, 'alp_sum_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+    if ndim == 2:
+      fig_alp_sum = plot_fn(alp_sum[...,1], x_arr, t_arr[:-1,...], tfboard = FLAGS.tfboard)
+      utils_plot.save_fig(fig_alp_sum, 'alp_sum_y', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
     
     if FLAGS.plot_traj_num_1d > 0:
       # compute trajectories of x. NOTE: time direction of trajs is different from PDE
