@@ -12,53 +12,147 @@ import tensorflow as tf
 import os
 import utils.utils_plot as utils_plot
 import scipy.interpolate as interpolate
+import numpy as np
 
-def compute_traj_1d(x_terminal, alp, fn_f, nt, x_arr, t_arr):
-  ''' x' = -f(alp,x,t), alp = alp(x,t)'''
-  ''' x_arr: [nx], t_arr: [nt], alp: [nt-1, nx] '''
+def compute_traj_1d(x_init, alp, fn_f, nt, x_arr, t_arr, x_period, T, epsl = 0.0):
+  ''' dx_t = f(alp_t,x_t,t)dt + sqrt{2 * epsl} dW_t, alp_t = alp(x_t,t) 
+  NOTE: the time direction in this function is different from PDEs, time of f is the same with PDEs
+  @ parameters:
+    x_arr: [nx], t_arr: [nt], alp: [2, nt-1, nx], x_init: [n_sample]
+  @ returns:
+    traj_alp: [nt-1, n_sample], traj_x: [nt, n_sample]'''
   traj_alp = []
-  traj_x = [x_terminal]
-  x_curr = x_terminal  # [n_sample]
-  # repeat bdry: TODO: handle periodic bdry
-  x_arr = jnp.concatenate([x_arr, x_arr[0:1]], axis = 0)  # [nx+1]
-  alp = jnp.concatenate([alp, alp[:, 0:1]], axis = 1)  # [nt-1, nx+1]
-  for i in range(nt):
-    ind = -1-i
-    dt = t_arr[ind] - t_arr[ind-1]
+  traj_x = [x_init]
+  x_curr = x_init  # [n_sample]
+  for i in range(nt-1):
+    ind = i
+    dt = t_arr[ind + 1] - t_arr[ind]
     # interpolation
-    alp_x = jnp.interp(x_curr, x_arr, alp[ind,:])  # [n_sample]
-    traj_alp.append(alp_x)
-    vel = fn_f(alp_x, x_curr, t_arr[ind])  # [n_sample]
-    x_curr = x_curr - vel * dt
+    alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)  # [n_sample]
+    alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)  # [n_sample]
+    traj_alp.append(alp_1 + alp_2)
+    # convert x_curr to [0,period]
+    vel = fn_f(alp_1, x_curr % x_period, T - t_arr[ind]) + fn_f(alp_2, x_curr % x_period, T - t_arr[ind])  # [n_sample]
+    x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
     traj_x.append(x_curr)
-  # reverse the order to get a forward time
-  traj_alp = jnp.stack(traj_alp[::-1], axis = 0)  # [nt, n_sample]
-  traj_x = jnp.stack(traj_x[::-1], axis = 0)  # [nt, n_sample]
+  traj_alp = jnp.stack(traj_alp, axis = 0)  # [nt-1, n_sample]
+  traj_x = jnp.stack(traj_x, axis = 0)  # [nt, n_sample]
   return traj_alp, traj_x
 
-def compute_traj_2d(x_terminal, alp, fn_f, nt, x_arr, t_arr):
-  ''' x' = -f(alp,x,t), alp = alp(x,t)'''
-  ''' x_arr: [nx, ny, 2], t_arr: [nt], alp: [nt-1, nx, ny, nstate] '''
-  traj_alp = []
-  traj_x = [x_terminal]
-  x_curr = x_terminal  # [n_sample, 2]
+def extend_bdry_2d(x_arr, val_arr, period, axis):
+  ''' extend bdry periodically for interpolation
+  @ parameters:
+    x_arr: [n_pts], val_arr: [:,n1, n2, val_dim], period: float, 
+    axis: int (along which axis to extend, if axis==1, n_pts==n1 and x_arr==x1_arr; if axis==2, n_pts==n2 and x_arr==x2_arr)
+  @ returns:
+    x_arr: [n_ext+1], val_arr: [:,n_ext+1, n2, val_dim] (if axis==1) or [:,n1, n_ext+1, val_dim] (if axis==2)
+  '''
+  x_min, x_max = np.min(x_arr), np.max(x_arr)
+  # compute how many periods and the bounds for the extended array
+  n_period_lb = jnp.floor(x_min / period)
+  n_period_ub = jnp.floor(x_max / period)
+  # compute the number of periods
+  n_period = n_period_ub - n_period_lb + 1
+  val_arr = np.concatenate([val_arr] * n_period, axis = axis)  # [n_ext, n2, val_dim] or [n1, n_ext, val_dim]
+  # compute the extended x_arr
+  x_arr_new = np.stack([x_arr] * n_period, axis = 0)  # [n_period, n_pts]
+  x_arr_new += np.arange(n_period_lb, n_period_ub+1)[:,None] * period  # [n_period, n_pts]
+  x_arr_new = np.reshape(x_arr_new, (-1,))  # [n_ext]
   # repeat bdry
-  x_arr = jnp.concatenate([x_arr, x_arr[0:1,:,:]], axis = 0)  # [nx+1, ny, 2]
-  x_arr = jnp.concatenate([x_arr, x_arr[:,0:1,:]], axis = 1)  # [nx+1, ny+1, 2]
-  alp = jnp.concatenate([alp, alp[:, 0:1,:,:]], axis = 1)  # [nt-1, nx+1, ny, nstate]
-  alp = jnp.concatenate([alp, alp[:,:,0:1,:]], axis = 2)  # [nt-1, nx+1, ny+1, nstate]
-  for i in range(nt):
-    ind = -1-i
-    dt = t_arr[ind] - t_arr[ind-1]
+  x_arr = jnp.concatenate([x_arr_new, x_arr_new[0:1] + period * n_period], axis = 0)  # [n_ext+1]
+  if axis == 1:
+    val_arr = jnp.concatenate([val_arr, val_arr[:,:1,:,:]], axis = 1)  # [:, n_ext+1, n2, val_dim]
+  elif axis == 2:
+    val_arr = jnp.concatenate([val_arr, val_arr[:,:,:1,:]], axis = 2)  # [:, n1, n_ext+1, val_dim]
+  else:
+    raise NotImplementedError
+  return x_arr_new, val_arr
+
+
+def compute_traj_2d(x_init, alp, fn_f, nt, x1_arr, x2_arr, t_arr, x_period, y_period, T, epsl = 0.0):
+  ''' dx_t = f(alp_t,x_t,t)dt + sqrt{2 * epsl} dW_t, alp_t = alp(x_t,t)
+  @ parameters:
+    x_arr: [nx, ny, 2], t_arr: [nt], alp: [4, nt-1, nx, ny, nstate], x_init: [n_sample, 2] 
+  @ returns:
+    traj_alp: [nt-1, n_sample, nstate], traj_x: [nt, n_sample, 2]  
+  '''
+  traj_alp = []
+  traj_x = [x_init]
+  x_curr = x_init  # [n_sample, 2]
+  for i in range(nt-1):
+    ind = i
+    dt = t_arr[ind + 1] - t_arr[ind]
+    # check bound and extend bdry
+    x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, alp[:,ind,:,:,:], x_period, axis = 1)
+    x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, alp_curr, y_period, axis = 2)
     # interpolation
-    alp_x = interpolate.interpn((x_arr[0,:,0], x_arr[:,0,1]), alp[ind,:,:,:], x_curr, method='linear')  # [n_sample, nstate]
-    traj_alp.append(alp_x)
-    vel = fn_f(alp_x, x_curr, t_arr[ind])  # [n_sample, 2]
-    x_curr = x_curr - vel * dt
+    alp1_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[0], x_curr, method='linear')  # [n_sample, nstate]
+    alp2_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[1], x_curr, method='linear')  # [n_sample, nstate]
+    alp1_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[2], x_curr, method='linear')  # [n_sample, nstate]
+    alp2_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[3], x_curr, method='linear')  # [n_sample, nstate]
+    traj_alp.append(alp1_x + alp2_x + alp1_y + alp2_y)
+    x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
+    vel = fn_f(alp1_x, x_curr_in_period, T - t_arr[ind]) + fn_f(alp2_x, x_curr_in_period, T - t_arr[ind]) + \
+          fn_f(alp1_y, x_curr_in_period, T - t_arr[ind]) + fn_f(alp2_y, x_curr_in_period, T - t_arr[ind])  # [n_sample, 2]
+    x_curr = x_curr + vel * dt + np.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
     traj_x.append(x_curr)
+  traj_alp = np.stack(traj_alp, axis = 0)  # [nt-1, n_sample, nstate]
+  traj_x = np.stack(traj_x, axis = 0)  # [nt, n_sample, 2]
+  return traj_alp, traj_x
 
+# def compute_traj_1d_fwd(x_init, alp, fn_f, nt, x_arr, t_arr, x_period, epsl = 0.0):
+#   ''' dx_t = f(alp,x,t)dt + sqrt{2 * epsl} dW_t, alp = alp(x,t)
+#   @ parameters:
+#     x_arr: [nx], t_arr: [nt], alp: [nt-1, nx], x_init: [n_sample]
+#   @ returns:
+#     traj_alp: [nt-1, n_sample], traj_x: [nt, n_sample]'''
+#   traj_alp = []
+#   traj_x = [x_init]
+#   x_curr = x_init  # [n_sample]
+#   # use alp at dt to approximate alp at 0
+#   alp = jnp.concatenate([alp[:1,...], alp], axis = 0)  # [nt, nx+1]
+#   for i in range(nt-1):
+#     ind = i
+#     dt = t_arr[ind+1] - t_arr[ind]
+#     # interpolation
+#     alp_x = jnp.interp(x_curr, x_arr, alp[ind,:], period = x_period)  # [n_sample]
+#     traj_alp.append(alp_x)
+#     vel = fn_f(alp_x, x_curr, t_arr[ind])  # [n_sample]
+#     x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * jnp.random.normal(size = x_curr.shape)
+#     traj_x.append(x_curr)
+#   traj_alp = jnp.stack(traj_alp, axis = 0)  # [nt-1, n_sample]
+#   traj_x = jnp.stack(traj_x, axis = 0)  # [nt, n_sample]
+#   return traj_alp, traj_x
 
-def solve_HJ(ndim, egno, epsl, nx, ny, nt, x_period, y_period, T, x_arr, 
+# def compute_traj_2d_fwd(x_init, alp, fn_f, nt, x1_arr, x2_arr, t_arr, x_period, y_period, epsl = 0.0):
+#   ''' dx_t = f(alp,x,t)dt + sqrt{2 * epsl} dW_t, alp = alp(x,t)
+#   @ parameters:
+#     x_arr: [nx, ny, 2], t_arr: [nt], alp: [nt-1, nx, ny, nstate], x_init: [n_sample, 2]
+#   @ returns:
+#     traj_alp: [nt-1, n_sample, nstate], traj_x: [nt, n_sample, 2]  
+#   '''
+#   traj_alp = []
+#   traj_x = [x_init]
+#   x_curr = x_init  # [n_sample, 2]
+#   # use alp at dt to approximate alp at 0
+#   alp = np.concatenate([alp[:1,...], alp], axis = 0)  # [nt, nx+1, ny+1, nstate]
+#   for i in range(nt-1):
+#     ind = i
+#     dt = t_arr[ind+1] - t_arr[ind]
+#     # check bound and extend bdry
+#     x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, alp[ind,:,:,:], x_period, axis = 0)
+#     x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, alp_curr, y_period, axis = 1)
+#     # interpolation
+#     alp_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr, x_curr, method='linear')  # [n_sample, nstate]
+#     traj_alp.append(alp_x)
+#     vel = fn_f(alp_x, x_curr, t_arr[ind])  # [n_sample, 2]
+#     x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * jnp.random.normal(size = x_curr.shape)
+#     traj_x.append(x_curr)
+#   traj_alp = np.stack(traj_alp, axis = 0)  # [nt-1, n_sample, nstate]
+#   traj_x = np.stack(traj_x, axis = 0)  # [nt, n_sample, 2]
+#   return traj_alp, traj_x
+
+def solve_HJ(ndim, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
              c_on_rho, time_step_per_PDHG, stepsz_param, N_maxiter, print_freq, eps):
   dt = T / (nt-1)
   dx = x_period / (nx)
@@ -76,7 +170,6 @@ def solve_HJ(ndim, egno, epsl, nx, ny, nt, x_period, y_period, T, x_arr,
   print('nspatial: ', nspatial)
 
   J = set_up_J(egno, ndim, period_spatial)
-  fns_dict = set_up_example_fns(egno, ndim, FLAGS.numerical_L_ind)
   g = J(x_arr)  # [1, nx] or [1, nx, ny]
   print('shape of g: ', g.shape)
 
@@ -89,13 +182,15 @@ def solve_HJ(ndim, egno, epsl, nx, ny, nt, x_period, y_period, T, x_arr,
     if FLAGS.method == 0:
       fn_update_dual = pdhg.update_dual_alternative
     else:
-      fn_update_dual = pdhg.update_dual_Newton_1d
+      # fn_update_dual = pdhg.update_dual_Newton_1d
+      raise NotImplementedError
   else:
     fn_update_primal = pdhg.update_primal_2d
     if FLAGS.method == 0:
       fn_update_dual = pdhg.update_dual_alternative
     else:
-      fn_update_dual = pdhg.update_dual_Newton_2d
+      # fn_update_dual = pdhg.update_dual_Newton_2d
+      raise NotImplementedError
 
   results, errs_all = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr, 
                                        ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
@@ -123,8 +218,13 @@ def main(argv):
   else:
     raise NotImplementedError
 
-  time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
-  logging.info("current time: " + time_stamp)
+  if FLAGS.load:
+    assert FLAGS.load_timestamp != ''
+    time_stamp = FLAGS.load_timestamp
+  else:
+    time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
+    logging.info("current time: " + time_stamp)
+    
   save_dir = './check_points/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
   save_plot_dir = './plots/{}'.format(time_stamp) + '/eg{}_{}d'.format(egno, ndim)
 
@@ -134,14 +234,15 @@ def main(argv):
     file_writer = tf.summary.create_file_writer(results_dir)
     file_writer.set_as_default()
 
+  fns_dict = set_up_example_fns(egno, ndim, FLAGS.numerical_L_ind)
   x_period, y_period = 2, 2
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period, num = nx, endpoint = False)[None,:,None]  # [1, nx, 1]
     t_arr = jnp.linspace(0.0, T, num = nt)[:,None]  # [nt, 1]
   else:
-    x_arr = jnp.linspace(0.0, x_period, num = nx, endpoint = False)  # [nx]
-    y_arr = jnp.linspace(0.0, y_period, num = ny, endpoint = False)  # [ny]
-    x_mesh, y_mesh = jnp.meshgrid(x_arr, y_arr, indexing='ij')  # [nx, ny]
+    x1_arr = jnp.linspace(0.0, x_period, num = nx, endpoint = False)  # [nx]
+    x2_arr = jnp.linspace(0.0, y_period, num = ny, endpoint = False)  # [ny]
+    x_mesh, y_mesh = jnp.meshgrid(x1_arr, x2_arr, indexing='ij')  # [nx, ny]
     x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
     t_arr = jnp.linspace(0.0, T, num = nt)[:,None,None]  # [nt, 1, 1]
 
@@ -149,7 +250,7 @@ def main(argv):
   if FLAGS.load:
     results, errs_all = load_solution(save_dir, filename_prefix)
   else:
-    results, errs_all = solve_HJ(ndim, egno, epsl, nx, ny, nt, x_period, y_period, T, x_arr, 
+    results, errs_all = solve_HJ(ndim, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
             c_on_rho, FLAGS.time_step_per_PDHG, FLAGS.stepsz_param, FLAGS.N_maxiter, FLAGS.print_freq, FLAGS.eps)
     if FLAGS.save:
       save(save_dir, filename_prefix, (results, errs_all))
@@ -168,22 +269,44 @@ def main(argv):
       alp_titles = ['alp_11', 'alp_12', 'alp_21', 'alp_22']
     else:
       raise NotImplementedError
-    fig_phi = plot_fn(phi, x_arr, t_arr, tfboard = True)
+    fig_phi = plot_fn(phi, x_arr, t_arr, tfboard = FLAGS.tfboard)
     utils_plot.save_fig(fig_phi, 'phi', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
-    fig_rho = plot_fn(rho, x_arr, t_arr[:-1,...], tfboard = True)
+    fig_rho = plot_fn(rho, x_arr, t_arr[:-1,...], tfboard = FLAGS.tfboard)
     utils_plot.save_fig(fig_rho, 'rho', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
     for i in range(2**ndim):
-      fig_alp = plot_fn(alp[i,...,0], x_arr, t_arr[:-1,...], tfboard = True)
+      fig_alp = plot_fn(alp[i,...,0], x_arr, t_arr[:-1,...], tfboard = FLAGS.tfboard)
       utils_plot.save_fig(fig_alp, alp_titles[i] + '_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
       if ndim == 2:
-        fig_alp = plot_fn(alp[i,...,1], x_arr, t_arr[:-1,...], tfboard = True)
+        fig_alp = plot_fn(alp[i,...,1], x_arr, t_arr[:-1,...], tfboard = FLAGS.tfboard)
         utils_plot.save_fig(fig_alp, alp_titles[i] + '_y', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
     
-    if FLAGS.plot_traj_num > 0:
-      # compute trajectories of x
+    if FLAGS.plot_traj_num_1d > 0:
+      # compute trajectories of x. NOTE: time direction of trajs is different from PDE
+      x_plot_lb = 0
+      x_plot_ub = x_period
+      y_plot_lb = 0
+      y_plot_ub = y_period
       if ndim == 1:
-        x_samples = jnp.linspace(0.0, x_period, num = FLAGS.plot_traj_num, endpoint = False) # [n_sample, 1]
-
+        x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
+        # reverse the time direction to be consistent with control
+        alp_combined = alp[:,::-1,...,0]  # [2,nt-1, nx]
+        traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined, fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
+        fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        fig_traj_alp = utils_plot.plot_traj_1d(traj_alp, t_arr[:-1,0], tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_alp, 'traj_alp', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+      elif ndim == 2:
+        x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d)
+        y_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)
+        x_mesh, y_mesh = jnp.meshgrid(x_samples, y_samples, indexing='ij')  # [n_sample, n_sample]
+        x_samples = jnp.stack([x_mesh.flatten(), y_mesh.flatten()], axis = -1)  # [n_sample**2, 2]
+        # reverse the time direction to be consistent with control
+        alp_combined = alp[:,::-1,...]  # [4, nt-1, nx, ny, nstate]
+        traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], x_period, y_period, T, epsl)
+        fig_traj_x = utils_plot.plot_traj_2d(traj_x, tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        fig_traj_alp = utils_plot.plot_traj_2d(traj_alp, tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_alp, 'traj_alp', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
   
   print('phi: ', phi)
   print('end')
@@ -213,8 +336,9 @@ if __name__ == '__main__':
   flags.DEFINE_boolean('save', True, 'if save to pickle')
   flags.DEFINE_boolean('tfboard', False, 'if use tfboard')
   flags.DEFINE_boolean('load', False, 'if load from pickle')
+  flags.DEFINE_string('load_timestamp', '', 'the timestamp of the folder to load from')
   flags.DEFINE_boolean('plot', False, 'if plot')
-  flags.DEFINE_integer('plot_traj_num', 0, 'number of trajectories to plot')
+  flags.DEFINE_integer('plot_traj_num_1d', 0, 'number of trajectories to plot')
 
   flags.DEFINE_float('C', 1.0, 'constant in preconditioning')
   flags.DEFINE_float('pow', 1.0, 'power in preconditioning')
