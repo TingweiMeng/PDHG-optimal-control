@@ -81,7 +81,8 @@ def save(save_dir, filename, results):
     pickle.dump(results, file)
     print('saved to {}'.format(file), flush = True)
 
-def load_solution(filename):
+def load_solution(dir, filename):
+  filename = dir + '/{}.pickle'.format(filename)
   with open(filename, 'rb') as f:
     results, errors = pickle.load(f)
   return results, errors
