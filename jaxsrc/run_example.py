@@ -39,7 +39,7 @@ def compute_traj_1d(x_init, alp, fn_f, nt, x_arr, t_arr, x_period, T, epsl = 0.0
   traj_x = jnp.stack(traj_x, axis = 0)  # [nt, n_sample]
   return traj_alp, traj_x
 
-def extend_bdry_2d(x_arr, val_arr, period, axis):
+def extend_bdry_2d(x_arr, x_min, x_max, val_arr, period, axis):
   ''' extend bdry periodically for interpolation
   @ parameters:
     x_arr: [n_pts], val_arr: [:,n1, n2, val_dim], period: float, 
@@ -47,10 +47,9 @@ def extend_bdry_2d(x_arr, val_arr, period, axis):
   @ returns:
     x_arr: [n_ext+1], val_arr: [:,n_ext+1, n2, val_dim] (if axis==1) or [:,n1, n_ext+1, val_dim] (if axis==2)
   '''
-  x_min, x_max = np.min(x_arr), np.max(x_arr)
   # compute how many periods and the bounds for the extended array
-  n_period_lb = jnp.floor(x_min / period)
-  n_period_ub = jnp.floor(x_max / period)
+  n_period_lb = int(np.floor(x_min / period))
+  n_period_ub = int(np.floor(x_max / period))
   # compute the number of periods
   n_period = n_period_ub - n_period_lb + 1
   val_arr = np.concatenate([val_arr] * n_period, axis = axis)  # [n_ext, n2, val_dim] or [n1, n_ext, val_dim]
@@ -59,13 +58,15 @@ def extend_bdry_2d(x_arr, val_arr, period, axis):
   x_arr_new += np.arange(n_period_lb, n_period_ub+1)[:,None] * period  # [n_period, n_pts]
   x_arr_new = np.reshape(x_arr_new, (-1,))  # [n_ext]
   # repeat bdry
-  x_arr = jnp.concatenate([x_arr_new, x_arr_new[0:1] + period * n_period], axis = 0)  # [n_ext+1]
+  x_arr_new = np.concatenate([x_arr_new, x_arr_new[0:1] + period * n_period], axis = 0)  # [n_ext+1]
   if axis == 1:
-    val_arr = jnp.concatenate([val_arr, val_arr[:,:1,:,:]], axis = 1)  # [:, n_ext+1, n2, val_dim]
+    val_arr = np.concatenate([val_arr, val_arr[:,:1,:,:]], axis = 1)  # [:, n_ext+1, n2, val_dim]
   elif axis == 2:
-    val_arr = jnp.concatenate([val_arr, val_arr[:,:,:1,:]], axis = 2)  # [:, n1, n_ext+1, val_dim]
+    val_arr = np.concatenate([val_arr, val_arr[:,:,:1,:]], axis = 2)  # [:, n1, n_ext+1, val_dim]
   else:
     raise NotImplementedError
+  print('shape of x_arr_new: ', x_arr_new.shape)
+  print('shape of val_arr: ', val_arr.shape)
   return x_arr_new, val_arr
 
 
@@ -77,14 +78,20 @@ def compute_traj_2d(x_init, alp, fn_f, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     traj_alp: [nt-1, n_sample, nstate], traj_x: [nt, n_sample, 2]  
   '''
   traj_alp = []
+  x_init = np.array(x_init)
+  x1_arr = np.array(x1_arr)
+  x2_arr = np.array(x2_arr)
+  alp = np.array(alp)
   traj_x = [x_init]
   x_curr = x_init  # [n_sample, 2]
   for i in range(nt-1):
     ind = i
     dt = t_arr[ind + 1] - t_arr[ind]
     # check bound and extend bdry
-    x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, alp[:,ind,:,:,:], x_period, axis = 1)
-    x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, alp_curr, y_period, axis = 2)
+    x_curr_min = np.min(x_curr, axis = 0)  # [2]
+    x_curr_max = np.max(x_curr, axis = 0)  # [2]
+    x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, x_curr_min[0], x_curr_max[0], alp[:,ind,:,:,:], x_period, axis = 1)
+    x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, x_curr_min[1], x_curr_max[1], alp_curr, y_period, axis = 2)
     # interpolation
     alp1_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[0], x_curr, method='linear')  # [n_sample, nstate]
     alp2_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[1], x_curr, method='linear')  # [n_sample, nstate]
