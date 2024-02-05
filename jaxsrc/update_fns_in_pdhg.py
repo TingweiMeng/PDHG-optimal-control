@@ -294,46 +294,46 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 #       break
 #   return x0
 
-def get_f_vals_1d(fns_dict, alp, x_arr, t_arr):
+def get_f_vals_1d(f_fn, alp, x_arr, t_arr):
   ''' @ parameters:
-      fns_dict: named tuple of functions, containing f_fn
-      alp: tuple of alp1, alp2, each term is [nt-1, nx, 1]
+      f_fn: a function taking in alp, x_arr, t_arr, returning [nt-1, nx, ndim]
+      alp: tuple of alp1, alp2, each term is [nt-1, nx, n_ctrl]
       x_arr: vec that can be broadcasted to [nt-1, nx]
       t_arr: vec that can be broadcasted to [nt-1, nx]
     @ return:
       f_val: tuple of f1, f2, each term is [nt-1, nx]
   '''
-  alp1, alp2 = alp  # [nt-1, nx, 1]
-  f1 = fns_dict.f_fn(alp1, x_arr, t_arr)[...,0]  # [nt-1, nx]
+  alp1, alp2 = alp  # [nt-1, nx, n_ctrl]
+  f1 = f_fn(alp1, x_arr, t_arr)[...,0]  # [nt-1, nx]
   f1 = f1 * (f1 >= 0.0)  # [nt-1, nx]
-  f2 = fns_dict.f_fn(alp2, x_arr, t_arr)[...,0]  # [nt-1, nx]
+  f2 = f_fn(alp2, x_arr, t_arr)[...,0]  # [nt-1, nx]
   f2 = f2 * (f2 < 0.0)  # [nt-1, nx]
   return f1, f2
 
-def get_f_vals_2d(fns_dict, alp, x_arr, t_arr):
+def get_f_vals_2d(f_fn, alp, x_arr, t_arr):
   ''' @ parameters:
-      fns_dict: named tuple of functions, containing f_fn
+      f_fn: a function taking in alp, x_arr, t_arr, returning [nt-1, nx, ny, ndim]
       alp: tuple of alp1_x, alp2_x, alp1_y, alp2_y, each term is [nt-1, nx, ny, n_ctrl]
       x_arr: vec that can be broadcasted to [nt-1, nx, ny]
       t_arr: vec that can be broadcasted to [nt-1, nx, ny]
     @ return:
       f_val: tuple of f11, f12, f21, f22, each term is [nt-1, nx, ny]
   '''
-  alp1_x, alp2_x, alp1_y, alp2_y = alp  # [nt-1, nx, ny, 1]
-  f1_x = fns_dict.f_fn(alp1_x, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
+  alp1_x, alp2_x, alp1_y, alp2_y = alp  # [nt-1, nx, ny, n_ctrl]
+  f1_x = f_fn(alp1_x, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
   f1_x = f1_x * (f1_x >= 0.0)  # [nt-1, nx, ny]
-  f2_x = fns_dict.f_fn(alp2_x, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
+  f2_x = f_fn(alp2_x, x_arr, t_arr)[...,0]  # [nt-1, nx, ny]
   f2_x = f2_x * (f2_x < 0.0)  # [nt-1, nx, ny]
-  f1_y = fns_dict.f_fn(alp1_y, x_arr, t_arr)[...,1]  # [nt-1, nx, ny]
+  f1_y = f_fn(alp1_y, x_arr, t_arr)[...,1]  # [nt-1, nx, ny]
   f1_y = f1_y * (f1_y >= 0.0)  # [nt-1, nx, ny]
-  f2_y = fns_dict.f_fn(alp2_y, x_arr, t_arr)[...,1]  # [nt-1, nx, ny]
+  f2_y = f_fn(alp2_y, x_arr, t_arr)[...,1]  # [nt-1, nx, ny]
   f2_y = f2_y * (f2_y < 0.0)  # [nt-1, nx, ny]
   return f1_x, f2_x, f1_y, f2_y
 
 def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   dx = dspatial[0]
   L_val = fns_dict.numerical_L_fn(alp, x_arr, t_arr)
-  f1, f2 = get_f_vals_1d(fns_dict, alp, x_arr, t_arr)
+  f1, f2 = get_f_vals_1d(fns_dict.f_fn, alp, x_arr, t_arr)
   vec = Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx)  # [nt-1, nx]
   vec -= Dx_right_decreasedim(phi, dx) * f1 + Dx_left_decreasedim(phi, dx) * f2
   vec -= L_val
@@ -341,13 +341,12 @@ def compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
 
 def compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   dx, dy = dspatial
-  # print('alp: ', alp, flush=True)
   L_val = fns_dict.numerical_L_fn(alp, x_arr, t_arr)  # [nt-1, nx, ny]
   Dx_right_phi = Dx_right_decreasedim(phi, dx)  # [nt-1, nx, ny]
   Dx_left_phi = Dx_left_decreasedim(phi, dx)  # [nt-1, nx, ny]
   Dy_right_phi = Dy_right_decreasedim(phi, dy)  # [nt-1, nx, ny]
   Dy_left_phi = Dy_left_decreasedim(phi, dy)  # [nt-1, nx, ny]
-  f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(fns_dict, alp, x_arr, t_arr)
+  f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(fns_dict.f_fn, alp, x_arr, t_arr)
   vec = Dt_decreasedim(phi, dt) - epsl * Dxx_decreasedim(phi, dx) - epsl * Dyy_decreasedim(phi, dy)  # [nt-1, nx, ny]
   vec -= Dx_right_phi * f1_x + Dx_left_phi * f2_x + Dy_right_phi * f1_y + Dy_left_phi * f2_y
   vec -= L_val
@@ -356,7 +355,7 @@ def compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
 def compute_cont_residual_1d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
   dx = dspatial[0]
   eps = 1e-4
-  f1, f2 = get_f_vals_1d(fns_dict, alp, x_arr, t_arr)
+  f1, f2 = get_f_vals_1d(fns_dict.f_fn, alp, x_arr, t_arr)
   m1 = (rho + eps) * f1  # [nt-1, nx]
   m2 = (rho + eps) * f2  # [nt-1, nx]
   res = Dt_increasedim(rho,dt) + epsl * Dxx_increasedim(rho,dx) # [nt, nx]
@@ -367,7 +366,7 @@ def compute_cont_residual_1d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
 def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x_arr, t_arr):
   dx, dy = dspatial
   eps = 1e-4
-  f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(fns_dict, alp, x_arr, t_arr)
+  f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(fns_dict.f_fn, alp, x_arr, t_arr)
   m1_x = (rho + eps) * f1_x  # [nt-1, nx, ny]
   m2_x = (rho + eps) * f2_x  # [nt-1, nx, ny]
   m1_y = (rho + eps) * f1_y  # [nt-1, nx, ny]
@@ -382,9 +381,6 @@ def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
 def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr):
   vec = compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr)
   rho_next = rho_prev + sigma * vec
-  # alp1, alp2 = alp  # [nt-1, nx, 1]
-  # coeff = alp1[...,0] ** 2 + alp2[...,0] ** 2 + 1
-  # rho_next = rho_prev + sigma * vec / coeff
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
@@ -442,7 +438,6 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspati
     update_rho = update_rho_2d
   else:
     raise NotImplementedError
-  # print('alp_prev: ', alp_prev, flush=True)
   alp_next = update_alp(alp_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr)
   rho_next = update_rho(rho_prev, phi_bar, alp_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr)
   err = jnp.sum((rho_next - rho_prev) ** 2) / jnp.sum(rho_next ** 2)  # scalar

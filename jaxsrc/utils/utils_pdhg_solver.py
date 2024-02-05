@@ -67,7 +67,12 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
     # err2: dual error
     err2 = jnp.linalg.norm(rho_next - rho_prev) / jnp.linalg.norm(rho_prev)
     for alp_p, alp_n in zip(alp_prev, alp_next):
-      err2 += jnp.linalg.norm(alp_p - alp_n) / jnp.linalg.norm(alp_p)
+      norm_alp = jnp.linalg.norm(alp_p)
+      norm_err = jnp.linalg.norm(alp_p - alp_n)
+      if norm_alp < 1e-6 and norm_err > 1e-6:
+        err2 += norm_err
+      elif norm_alp >= 1e-6:
+        err2 += norm_err / norm_alp
 
     if tfboard:
       tf.summary.scalar('primal error', err1, step = tfrecord_ind + i)
@@ -77,7 +82,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
     if error[0] < eps and error[1] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
-    if jnp.isnan(error[0]) or jnp.isnan(error[1]):
+    if jnp.any(jnp.isnan(phi_next)) or jnp.any(jnp.isnan(rho_next)) or jnp.any(jnp.isnan(alp_next)):
       print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:
