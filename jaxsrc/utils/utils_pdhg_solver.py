@@ -82,7 +82,7 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
     if error[0] < eps and error[1] < eps:
       print('PDHG converges at iter {}'.format(i), flush=True)
       break
-    if jnp.any(jnp.isnan(phi_next)) or jnp.any(jnp.isnan(rho_next)) or jnp.any(jnp.isnan(alp_next)):
+    if jnp.any(jnp.isnan(phi_next)) or jnp.any(jnp.isnan(rho_next)):
       print("Nan error at iter {}".format(i))
       break
     if print_freq > 0 and i % print_freq == 0:

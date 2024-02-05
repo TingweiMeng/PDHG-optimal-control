@@ -101,7 +101,7 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     traj_alp.append(alp1_x + alp2_x + alp1_y + alp2_y)
     x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
     f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(f_fn, (alp1_x, alp2_x, alp1_y, alp2_y), x_curr_in_period, T - t_arr[ind])
-    vel = f1_x + f2_x + f1_y + f2_y  # [n_sample, 2]
+    vel = np.array([f1_x + f2_x, f1_y + f2_y]).T  # [n_sample, 2]
     # vel = f_fn(alp1_x, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_x, x_curr_in_period, T - t_arr[ind]) + \
     #       f_fn(alp1_y, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_y, x_curr_in_period, T - t_arr[ind])  # [n_sample, 2]
     x_curr = x_curr + vel * dt + np.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
@@ -279,18 +279,15 @@ def main(argv):
   if FLAGS.plot:
     if ndim == 1:
       plot_phi_fn = utils_plot.plot_solution_1d
+      plot_alp_fn = utils_plot.plot_solution_1d
+      alp_titles = ['alp_1', 'alp_2']
     elif ndim == 2:
       plot_phi_fn = utils_plot.plot_solution_2d
+      plot_alp_fn = utils_plot.plot_solution_2d
+      alp_titles = ['alp_11', 'alp_12', 'alp_21', 'alp_22']
     else:
       raise NotImplementedError
     
-    if n_ctrl == 1:
-      plot_alp_fn = utils_plot.plot_solution_1d
-      alp_titles = ['alp_1', 'alp_2']
-    else:
-      plot_alp_fn = utils_plot.plot_solution_2d
-      alp_titles = ['alp_11', 'alp_12', 'alp_21', 'alp_22']
-
     fig_phi = plot_phi_fn(phi, x_arr, t_arr, tfboard = FLAGS.tfboard)
     utils_plot.save_fig(fig_phi, 'phi', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
     for i in range(2**ndim):
