@@ -102,6 +102,8 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
     f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(f_fn, (alp1_x, alp2_x, alp1_y, alp2_y), x_curr_in_period, T - t_arr[ind])
     vel = np.array([f1_x + f2_x, f1_y + f2_y]).T  # [n_sample, 2]
+    print('x_curr: ', x_curr)
+    print('vel: ', vel)
     # vel = f_fn(alp1_x, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_x, x_curr_in_period, T - t_arr[ind]) + \
     #       f_fn(alp1_y, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_y, x_curr_in_period, T - t_arr[ind])  # [n_sample, 2]
     x_curr = x_curr + vel * dt + np.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
@@ -163,7 +165,7 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
 #   return traj_alp, traj_x
 
 def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
-             c_on_rho, time_step_per_PDHG, stepsz_param, N_maxiter, print_freq, eps):
+             c_on_rho, time_step_per_PDHG, stepsz_param, N_maxiter, print_freq, eps, bc):
   dt = T / (nt-1)
   dx = x_period / (nx)
   dy = y_period / (ny)
@@ -184,20 +186,24 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
   print('shape of g: ', g.shape)
 
   # fv for preconditioning
-  fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial)
+  fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc)
   if ndim == 1:
     fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
-      pdhg.update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, 
+      pdhg.update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, bc,
                             C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
     if FLAGS.method == 0:
-      fn_update_dual = pdhg.update_dual_alternative
+      fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
+        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
     else:
       # fn_update_dual = pdhg.update_dual_Newton_1d
       raise NotImplementedError
   else:
-    fn_update_primal = pdhg.update_primal_2d
+    fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
+      pdhg.update_primal_2d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, bc,
+                            C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
     if FLAGS.method == 0:
-      fn_update_dual = pdhg.update_dual_alternative
+      fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
+        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
     else:
       # fn_update_dual = pdhg.update_dual_Newton_2d
       raise NotImplementedError
@@ -224,8 +230,18 @@ def main(argv):
   if egno == 30:  # Newton, n_ctrl = 1, ndim = 2
     assert ndim == 2
     n_ctrl = 1
+    # 0 for periodic, 1 for Neumann, 2 for Dirichlet
+    bc = (1,0)
+    x_period, y_period = 10, 2
+    x_centered, y_centered = True, True
   else:
     n_ctrl = ndim
+    x_period, y_period = 2, 2
+    x_centered, y_centered = False, False
+    if ndim == 1:
+      bc = 0
+    else:
+      bc = (0,0)
 
   if ndim == 1:
     filename_prefix = 'nt{}_nx{}'.format(nt, nx)
@@ -251,7 +267,6 @@ def main(argv):
     file_writer.set_as_default()
 
   fns_dict = set_up_example_fns(egno, ndim, FLAGS.numerical_L_ind)
-  x_period, y_period = 2, 2
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period, num = nx, endpoint = False)[None,:,None]  # [1, nx, 1]
     t_arr = jnp.linspace(0.0, T, num = nt)[:,None]  # [nt, 1]
@@ -267,7 +282,7 @@ def main(argv):
     results, errs_all = load_solution(save_dir, filename_prefix)
   else:
     results, errs_all = solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
-            c_on_rho, FLAGS.time_step_per_PDHG, FLAGS.stepsz_param, FLAGS.N_maxiter, FLAGS.print_freq, FLAGS.eps)
+            c_on_rho, FLAGS.time_step_per_PDHG, FLAGS.stepsz_param, FLAGS.N_maxiter, FLAGS.print_freq, FLAGS.eps, bc)
     if FLAGS.save:
       save(save_dir, filename_prefix, (results, errs_all))
 
@@ -312,26 +327,37 @@ def main(argv):
       y_plot_ub = y_period
       # reverse the time direction to be consistent with control
       alp_combined = alp[:,::-1,...]  # [2,nt-1, nx, n_ctrl] or [4,nt-1, nx, ny, n_ctrl]
-      if ndim == 1:
-        x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
-        traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined, fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
-        fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
-        utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
-      elif ndim == 2:
-        x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d)
-        y_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)
-        x_mesh, y_mesh = jnp.meshgrid(x_samples, y_samples, indexing='ij')  # [n_sample, n_sample]
-        x_samples = jnp.stack([x_mesh.flatten(), y_mesh.flatten()], axis = -1)  # [n_sample**2, 2]
+      if egno == 30:  # for Newton, plot samples are with x' = 0
+        x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d)[:,None] # [n_sample, 1]
+        x_samples = jnp.pad(x_samples, ((0,0), (1,0)), mode = 'constant', constant_values = 0)  # [n_sample, 2]  (x'(0)=0)
         traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], x_period, y_period, T, epsl)
-        fig_traj_x = utils_plot.plot_traj_2d(traj_x, tfboard = FLAGS.tfboard)
-        utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
-        
-      if n_ctrl == 1:
-        fig_traj_alp = utils_plot.plot_traj_1d(traj_alp[...,0], t_arr[:-1,0], tfboard = FLAGS.tfboard)
-        utils_plot.save_fig(fig_traj_alp, 'traj_alp', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        fig_traj_vel = utils_plot.plot_traj_1d(traj_x[...,0], t_arr[:,0], tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_vel, 'traj_vel', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        fig_traj_pos = utils_plot.plot_traj_1d(traj_x[...,1], t_arr[:,0], tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_pos, 'traj_pos', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        fig_traj_acc = utils_plot.plot_traj_1d(traj_alp[...,0], t_arr[:-1,0], tfboard = FLAGS.tfboard)
+        utils_plot.save_fig(fig_traj_acc, 'traj_acc', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
       else:
-        fig_traj_alp = utils_plot.plot_traj_2d(traj_alp, tfboard = FLAGS.tfboard)
-        utils_plot.save_fig(fig_traj_alp, 'traj_alp', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        if ndim == 1 or egno == 30:  # for Newton, plot samples are with x' = 0
+          x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
+          traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined, fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
+          fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
+          utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        elif ndim == 2:
+          x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d)
+          y_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)
+          x_mesh, y_mesh = jnp.meshgrid(x_samples, y_samples, indexing='ij')  # [n_sample, n_sample]
+          x_samples = jnp.stack([x_mesh.flatten(), y_mesh.flatten()], axis = -1)  # [n_sample**2, 2]
+          traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], x_period, y_period, T, epsl)
+          fig_traj_x = utils_plot.plot_traj_2d(traj_x, tfboard = FLAGS.tfboard)
+          utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        
+        if n_ctrl == 1:
+          fig_traj_alp = utils_plot.plot_traj_1d(traj_alp[...,0], t_arr[:-1,0], tfboard = FLAGS.tfboard)
+          utils_plot.save_fig(fig_traj_alp, 'traj_alp', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
+        else:
+          fig_traj_alp = utils_plot.plot_traj_2d(traj_alp, tfboard = FLAGS.tfboard)
+          utils_plot.save_fig(fig_traj_alp, 'traj_alp', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
   
   print('phi: ', phi)
   print('end')

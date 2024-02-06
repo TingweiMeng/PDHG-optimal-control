@@ -1,124 +1,177 @@
 import jax
 import jax.numpy as jnp
+from functools import partial
 
-@jax.jit
-def Dx_right_decreasedim(phi, dx):
-  '''F phi = (phi_{k+1,i+1}-phi_{k+1,i})/dx
-  phi_{k+1,i+1} is periodic in i+1. Can be also used for 2d spatial domain
+'''
+bc: 0 for periodic, 1 for neumann, 2 for dirichlet
+'''
+
+def Dx_right_base(phi, dx, bc):
+  '''out = (phi_{k,i+1}-phi_{k,i})/dx
   @ parameters:
     phi: [nt, nx] or [nt, nx, ny]
+    bc: 0, 1, 2
+  @ return
+    out: [nt, nx] or [nt, nx, ny]
+  '''
+  if bc == 0:
+    out = jnp.roll(phi, -1, axis=1) - phi
+  elif bc == 1:
+    out = jnp.concatenate([phi[:,1:]-phi[:,:-1], jnp.zeros_like(phi[:,0:1])], axis = 1)
+  elif bc == 2:
+    out = jnp.concatenate([phi[:,1:], jnp.zeros_like(phi[:,0:1])], axis = 1) - phi
+  return out/dx
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dx_right_decreasedim(phi, dx, bc):
+  '''out = (phi_{k+1,i+1}-phi_{k+1,i})/dx
+  @ parameters:
+    phi: [nt, nx] or [nt, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt-1, nx] or [nt-1, nx, ny]
   '''
-  phi_ip1 = jnp.roll(phi, -1, axis=1)
-  out = phi_ip1 - phi
-  out = out[1:,...]/dx
-  return out
+  out = Dx_right_base(phi, dx, bc)
+  return out[1:,...]
 
-@jax.jit
-def Dx_right_increasedim(m, dx):
+@partial(jax.jit, static_argnames=('bc',))
+def Dx_right_increasedim(m, dx, bc):
   '''F m = (-m[k-1,i] + m[k-1,i+1])/dx
-  m[k,i+1] is periodic in i+1
   prepend 0 in axis-0
   @ parameters:
     m: [nt-1, nx] or [nt-1, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt, nx] or [nt, nx, ny]
   '''
-  m_ip1 = jnp.roll(m, -1, axis=1)
-  out = -m + m_ip1
-  out = out/dx
+  out = Dx_right_base(m, dx, bc)  # [nt-1, nx] or [nt-1, nx, ny]
   out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
   return out
 
-@jax.jit
-def Dx_left_decreasedim(phi, dx):
-  '''F phi = (phi_{k+1,i}-phi_{k+1,i-1})/dx
-  phi_{k+1,i-1} is periodic in i+1
+def Dx_left_base(phi, dx, bc):
+  '''out = (phi_{k,i}-phi_{k,i-1})/dx
   @ parameters:
     phi: [nt, nx] or [nt, nx, ny]
+    bc: 0, 1, 2
+  @ return
+    out: [nt, nx] or [nt, nx, ny]
+  '''
+  if bc == 0:
+    out = phi - jnp.roll(phi, 1, axis=1)
+  elif bc == 1:
+    out = jnp.concatenate([jnp.zeros_like(phi[:,0:1]), phi[:,1:]-phi[:,:-1]], axis = 1)
+  elif bc == 2:
+    out = phi - jnp.concatenate([jnp.zeros_like(phi[:,0:1]), phi[:,:-1]], axis = 1)
+  return out/dx
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dx_left_decreasedim(phi, dx, bc):
+  '''F phi = (phi_{k+1,i}-phi_{k+1,i-1})/dx
+  @ parameters:
+    phi: [nt, nx] or [nt, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt-1, nx] or [nt-1, nx, ny]
   '''
-  phi_im1 = jnp.roll(phi, 1, axis=1)
-  out = phi - phi_im1
-  out = out[1:,...]/dx
-  return out
+  out = Dx_left_base(phi, dx, bc)
+  return out[1:,...]
 
-@jax.jit
-def Dx_left_increasedim(m, dx):
-  '''F m = (-m[k,i-1] + m[k,i])/dx
-  m[k,i-1] is periodic in i-1
+@partial(jax.jit, static_argnames=('bc',))
+def Dx_left_increasedim(m, dx, bc):
+  '''F m = (-m[k-1,i-1] + m[k-1,i])/dx
   prepend 0 in axis-0
   @ parameters:
     m: [nt-1, nx] or [nt-1, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt, nx] or [nt, nx, ny]
   '''
-  m_im1 = jnp.roll(m, 1, axis=1)
-  out = -m_im1 + m
-  out = out/dx
+  out = Dx_left_base(m, dx, bc)  # [nt-1, nx] or [nt-1, nx, ny]
   out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
   return out
 
-
-@jax.jit
-def Dy_right_decreasedim(phi, dy):
-  '''F phi = (phi_{k+1,:,i+1}-phi_{k+1,:,i})/dy
-  phi_{k+1,:,i+1} is periodic in i+1.
+def Dy_right_base(phi, dy, bc):
+  '''out = (phi_{k,i+1}-phi_{k,i})/dy
   @ parameters:
     phi: [nt, nx, ny]
-  @ return
-    out: [nt-1, nx, ny]
-  '''
-  phi_ip1 = jnp.roll(phi, -1, axis=2)
-  out = phi_ip1 - phi
-  out = out[1:,...]/dy
-  return out
-
-@jax.jit
-def Dy_right_increasedim(m, dy):
-  '''F m = (-m[k-1,:,i] + m[k-1,:,i+1])/dy
-  m[k,:,i+1] is periodic in i+1
-  prepend 0 in axis-0
-  @ parameters:
-    m: [nt-1, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt, nx, ny]
   '''
-  m_ip1 = jnp.roll(m, -1, axis=2)
-  out = -m + m_ip1
-  out = out/dy
+  if bc == 0:
+    out = jnp.roll(phi, -1, axis=2) - phi
+  elif bc == 1:
+    out = jnp.concatenate([phi[:,:,1:]-phi[:,:,:-1], jnp.zeros_like(phi[:,:,0:1])], axis = 2)
+  elif bc == 2:
+    out = jnp.concatenate([phi[:,:,1:], jnp.zeros_like(phi[:,:,0:1])], axis = 2) - phi
+  return out/dy
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dy_right_decreasedim(phi, dy, bc):
+  '''F phi = (phi_{k+1,:,i+1}-phi_{k+1,:,i})/dy
+  @ parameters:
+    phi: [nt, nx, ny]
+    bc: 0, 1, 2
+  @ return
+    out: [nt-1, nx, ny]
+  '''
+  out = Dy_right_base(phi, dy, bc)
+  return out[1:,...]
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dy_right_increasedim(m, dy, bc):
+  '''F m = (-m[k-1,:,i] + m[k-1,:,i+1])/dy
+  prepend 0 in axis-0
+  @ parameters:
+    m: [nt-1, nx, ny]
+    bc: 0, 1, 2
+  @ return
+    out: [nt, nx, ny]
+  '''
+  out = Dy_right_base(m, dy, bc)  # [nt-1, nx, ny]
   out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
   return out
 
-@jax.jit
-def Dy_left_decreasedim(phi, dy):
+def Dy_left_base(phi, dy, bc):
+  '''out = (phi_{k,i}-phi_{k,i-1})/dy
+  @ parameters:
+    phi: [nt, nx, ny]
+    bc: 0, 1, 2
+  @ return
+    out: [nt, nx, ny]
+  '''
+  if bc == 0:
+    out = phi - jnp.roll(phi, 1, axis=2)
+  elif bc == 1:
+    out = jnp.concatenate([jnp.zeros_like(phi[:,:,0:1]), phi[:,:,1:]-phi[:,:,:-1]], axis = 2)
+  elif bc == 2:
+    out = phi - jnp.concatenate([jnp.zeros_like(phi[:,:,0:1]), phi[:,:,:-1]], axis = 2)
+  return out/dy
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dy_left_decreasedim(phi, dy, bc):
   '''F phi = (phi_{k+1,:,i}-phi_{k+1,:,i-1})/dy
   phi_{k+1,:,i-1} is periodic in i+1
   @ parameters:
     phi: [nt, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt-1, nx, ny]
   '''
-  phi_im1 = jnp.roll(phi, 1, axis=2)
-  out = phi - phi_im1
-  out = out[1:,...]/dy
-  return out
+  out = Dy_left_base(phi, dy, bc)
+  return out[1:,...]
 
-@jax.jit
-def Dy_left_increasedim(m, dy):
-  '''F m = (-m[k,:,i-1] + m[k,:,i])/dy
-  m[k,:,i-1] is periodic in i-1
+@partial(jax.jit, static_argnames=('bc',))
+def Dy_left_increasedim(m, dy, bc):
+  '''F m = (-m[k-1,:,i-1] + m[k-1,:,i])/dy
   prepend 0 in axis-0
   @ parameters:
     m: [nt-1, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt, nx, ny]
   '''
-  m_im1 = jnp.roll(m, 1, axis=2)
-  out = -m_im1 + m
-  out = out/dy
+  out = Dy_left_base(m, dy, bc)  # [nt-1, nx, ny]
   out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0) #prepend 0
   return out
 
@@ -138,37 +191,6 @@ def Dt_decreasedim(phi, dt):
   return out
 
 @jax.jit
-def Dxx_decreasedim(phi, dx):
-  '''Dxx phi = (phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
-  phi_{k+1,i} is periodic in i, but not in k
-  @ parameters:
-    phi: [nt, nx] or [nt, nx, ny]
-  @ return
-    out: [nt-1, nx] or [nt-1, nx, ny]
-  '''
-  phi_kp1 = phi[1:,:]
-  phi_ip1 = jnp.roll(phi_kp1, -1, axis=1)
-  phi_im1 = jnp.roll(phi_kp1, 1, axis=1)
-  out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dx**2
-  return out
-
-@jax.jit
-def Dyy_decreasedim(phi, dy):
-  '''Dxx phi = (phi_{k+1,:,i+1}+phi_{k+1,:,i-1}-2*phi_{k+1,:,i})/dy^2
-  phi_{k+1,:,i} is periodic in i, but not in k
-  @ parameters:
-    phi: [nt, nx, ny]
-  @ return
-    out: [nt-1, nx, ny]
-  '''
-  phi_kp1 = phi[1:,...]
-  phi_ip1 = jnp.roll(phi_kp1, -1, axis=2)
-  phi_im1 = jnp.roll(phi_kp1, 1, axis=2)
-  out = (phi_ip1 + phi_im1 - 2*phi_kp1)/dy**2
-  return out
-
-
-@jax.jit
 def Dt_increasedim(rho, dt):
   '''Dt rho = (-rho[k-1,...] + rho[k,...])/dt
             #k = 0...(nt-1)
@@ -180,37 +202,98 @@ def Dt_increasedim(rho, dt):
   '''
   rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
   rho_k = jnp.concatenate([rho, jnp.zeros_like(rho[0:1,...])], axis = 0) #append 0
-  out = (-rho_km1 + rho_k)/dt
+  out = (rho_k - rho_km1) /dt
   return out
 
-@jax.jit
-def Dxx_increasedim(rho, dx):
-  '''F rho = (rho[k-1,i+1]+rho[k-1,i-1]-2*rho[k-1,i])/dx^2
-            #k = 0...(nt-1)
-  rho[-1,:] = 0
+def Dxx_base(phi, dx, bc):
+  '''Dxx phi = (phi_{k,i+1}+phi_{k,i-1}-2*phi_{k,i})/dx^2
   @ parameters:
-    rho: [nt-1, nx] or [nt-1, nx, ny]
+    phi: [nt, nx] or [nt, nx, ny]
+    bc: 0, 1, 2
   @ return
     out: [nt, nx] or [nt, nx, ny]
   '''
-  rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
-  rho_im1 = jnp.roll(rho_km1, 1, axis=1)
-  rho_ip1 = jnp.roll(rho_km1, -1, axis=1)
-  out = (rho_ip1 + rho_im1 - 2*rho_km1) /dx**2
+  if bc == 0:
+    phi_ip1 = jnp.roll(phi, -1, axis=1)
+    phi_im1 = jnp.roll(phi, 1, axis=1)
+  elif bc == 1:
+    phi_ip1 = jnp.concatenate([phi[:,1:], phi[:,-1:]], axis = 1)
+    phi_im1 = jnp.concatenate([phi[:,0:1], phi[:,:-1]], axis = 1)
+  elif bc == 2:
+    phi_ip1 = jnp.concatenate([phi[:,1:], jnp.zeros_like(phi[:,0:1])], axis = 1)
+    phi_im1 = jnp.concatenate([jnp.zeros_like(phi[:,0:1]), phi[:,:-1]], axis = 1)
+  out = (phi_ip1 + phi_im1 - 2*phi)/dx**2
   return out
 
-@jax.jit
-def Dyy_increasedim(rho, dy):
-  '''F rho = (rho[k-1,:,i+1]+rho[k-1,:,i-1]-2*rho[k-1,:,i])/dy^2
-            #k = 0...(nt-1)
-  rho[-1,:] = 0
+@partial(jax.jit, static_argnames=('bc',))
+def Dxx_decreasedim(phi, dx, bc):
+  '''Dxx phi = (phi_{k+1,i+1}+phi_{k+1,i-1}-2*phi_{k+1,i})/dx^2
   @ parameters:
-    rho: [nt-1, nx, ny]
+    phi: [nt, nx] or [nt, nx, ny]
+    bc: 0, 1, 2
+  @ return
+    out: [nt-1, nx] or [nt-1, nx, ny]
+  '''
+  out = Dxx_base(phi, dx, bc)
+  return out[1:,...]
+
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dxx_increasedim(rho, dx, bc):
+  '''F rho = (rho[k-1,i+1]+rho[k-1,i-1]-2*rho[k-1,i])/dx^2
+  prepend 0 in axis-0
+  @ parameters:
+    rho: [nt-1, nx] or [nt-1, nx, ny]
+    bc: 0, 1, 2 (bc in x)
+  @ return
+    out: [nt, nx] or [nt, nx, ny]
+  '''
+  out = Dxx_base(rho, dx, bc)  # [nt-1, nx] or [nt-1, nx, ny]
+  out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0)
+  return out
+
+def Dyy_base(phi, dy, bc):
+  '''Dyy phi = (phi_{k,i,j+1}+phi_{k,i,j-1}-2*phi_{k,i,j})/dy^2
+  @ parameters:
+    phi: [nt, nx, ny]
+    bc: 0, 1, 2 (bc in y)
   @ return
     out: [nt, nx, ny]
   '''
-  rho_km1 = jnp.concatenate([jnp.zeros_like(rho[0:1,...]), rho], axis = 0) #prepend 0
-  rho_im1 = jnp.roll(rho_km1, 1, axis=2)
-  rho_ip1 = jnp.roll(rho_km1, -1, axis=2)
-  out = (rho_ip1 + rho_im1 - 2*rho_km1) /dy**2
+  if bc == 0:
+    phi_ip1 = jnp.roll(phi, -1, axis=2)
+    phi_im1 = jnp.roll(phi, 1, axis=2)
+  elif bc == 1:
+    phi_ip1 = jnp.concatenate([phi[:,:,1:], phi[:,:,-1:]], axis = 2)
+    phi_im1 = jnp.concatenate([phi[:,:,0:1], phi[:,:,:-1]], axis = 2)
+  elif bc == 2:
+    phi_ip1 = jnp.concatenate([phi[:,:,1:], jnp.zeros_like(phi[:,:,0:1])], axis = 2)
+    phi_im1 = jnp.concatenate([jnp.zeros_like(phi[:,:,0:1]), phi[:,:,:-1]], axis = 2)
+  out = (phi_ip1 + phi_im1 - 2*phi)/dy**2
+  return out
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dyy_decreasedim(phi, dy, bc):
+  '''Dxx phi = (phi_{k+1,:,j+1}+phi_{k+1,:,j-1}-2*phi_{k+1,:,j})/dy^2
+  @ parameters:
+    phi: [nt, nx, ny]
+    bc: 0, 1, 2 (bc in y)
+  @ return
+    out: [nt-1, nx, ny]
+  '''
+  out = Dyy_base(phi, dy, bc)
+  return out[1:,...]
+
+@partial(jax.jit, static_argnames=('bc',))
+def Dyy_increasedim(rho, dy, bc):
+  '''F rho = (rho[k-1,:,j+1]+rho[k-1,:,j-1]-2*rho[k-1,:,j])/dy^2
+  prepend 0 in axis-0
+  @ parameters:
+    rho: [nt-1, nx, ny]
+    bc: 0, 1, 2 (bc in y)
+  @ return
+    out: [nt, nx, ny]
+  '''
+  out = Dyy_base(rho, dy, bc)  # [nt-1, nx, ny]
+  out = jnp.concatenate([jnp.zeros_like(out[0:1,...]), out], axis = 0)
   return out
