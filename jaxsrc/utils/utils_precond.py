@@ -49,7 +49,7 @@ def compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc):
     if bc == 0:
       fv = jnp.fft.fft(Lap_vec)  # [nx]
     elif bc == 1:
-      pass
+      fv = jax.scipy.fft.dct(Lap_vec)
     else:
       raise NotImplementedError
   elif ndim == 2:
@@ -62,7 +62,8 @@ def compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc):
     if bc_x == 0 and bc_y == 0:
       fv = jnp.fft.fft2(Lap_mat)  # [nx, ny]
     elif bc_x == 1 and bc_y == 0:
-      pass
+      fv1 = jax.scipy.fft.dct(Lap_mat, axis = 0)
+      fv = jnp.fft.fft(fv1, axis = -1)
     else:
       raise NotImplementedError
   else:
@@ -85,9 +86,7 @@ def H1_precond_1d(source_term, fv, dt, bc, C = 1.0, pow = 1, Ct = 1):
   nt, nx = jnp.shape(source_term)
   # exclude the first row wrt t
   if bc == 0:
-    v_Fourier =  jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
-  elif bc == 1:
-    pass
+    v_Fourier = jnp.fft.fft(source_term[1:,:], axis = 1)  # [nt-1, nx]
   else:
     raise NotImplementedError
   thomas_b = einshape('n->mn', -fv, m = nt-1) + C # [nt-1, nx]
@@ -102,8 +101,6 @@ def H1_precond_1d(source_term, fv, dt, bc, C = 1.0, pow = 1, Ct = 1):
     phi_fouir_part = v_Fourier / thomas_b
   if bc == 0:
     F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 1).real # [nt-1, nx]
-  elif bc == 1:
-    pass
   else:
     raise NotImplementedError
   phi_update = jnp.concatenate([jnp.zeros((1,nx)), F_phi_updates], axis = 0) # [nt, nx]
@@ -125,9 +122,10 @@ def H1_precond_2d(source_term, fv, dt, bc, C = 1.0):
   nt, nx, ny = jnp.shape(source_term)
   bc_x, bc_y = bc
   if bc_x == 0 and bc_y == 0:
-    v_Fourier =  jnp.fft.fft2(source_term[1:,...], axes = (1,2)) # [nt-1, nx, ny]
+    v_Fourier = jnp.fft.fft2(source_term[1:,...], axes = (1,2)) # [nt-1, nx, ny]
   elif bc_x == 1 and bc_y == 0:
-    pass
+    v_Fourier = jax.scipy.fft.dct(source_term[1:,...], axis = 1)  # [nt-1, nx, ny]
+    v_Fourier = jnp.fft.fft(v_Fourier, axis = 2)  # [nt-1, nx, ny]
   else:
     raise NotImplementedError
   dl = -jnp.pad(1/(dt*dt)*jnp.ones((nt-2,)), (1,0), mode = 'constant', constant_values=0.0).astype(jnp.complex128)
@@ -139,7 +137,8 @@ def H1_precond_2d(source_term, fv, dt, bc, C = 1.0):
   if bc_x == 0 and bc_y == 0:
     F_phi_updates = jnp.fft.ifft2(phi_fouir_part, axes = (1,2)).real  # [nt-1, nx, ny]
   elif bc_x == 1 and bc_y == 0:
-    pass
+    F_phi_updates = jnp.fft.ifft(phi_fouir_part, axis = 2).real  # [nt-1, nx, ny]
+    F_phi_updates = jax.scipy.fft.idct(F_phi_updates, axis = 1)  # [nt-1, nx, ny]
   else:
     raise NotImplementedError
   phi_update = jnp.concatenate([jnp.zeros((1,nx,ny)), F_phi_updates], axis = 0) # [nt, nx, ny]
