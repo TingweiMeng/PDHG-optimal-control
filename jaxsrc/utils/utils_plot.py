@@ -7,6 +7,7 @@ import os
 # from print_n_plot import read_solution
 import utils.utils as utils
 import tensorflow as tf
+import math
 
 def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
   ''' plot solution and error of 1d HJ PDE
@@ -39,7 +40,7 @@ def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
     return fig
     
 
-def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True):
+def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True, num_cols = 2):
   '''
   @ parameters:
     phi: [nt, nx, ny]
@@ -53,11 +54,14 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True)
   x_arr = jnp.squeeze(x_arr)  # [nx, ny, 2]
   t_arr = jnp.squeeze(t_arr)  # [nt]
 
-  fig, axs = plt.subplots(T_divisor // 2, 2, figsize=(10, 10))
+  fig, axs = plt.subplots(math.ceil(T_divisor / num_cols), num_cols, figsize=(10, 10))
   nt = t_arr.shape[0]
   for i in range(T_divisor):
     ind = (nt-1) // (T_divisor - 1) * i
-    ax = axs[i // 2, i % 2]
+    if num_cols > 1:
+      ax = axs[i // num_cols, i % num_cols]
+    else:
+      ax = axs[i]
     ax.set_title('t = {:.2f}'.format(t_arr[ind]))
     ax.set_xlabel('x')
     ax.set_ylabel('y')
