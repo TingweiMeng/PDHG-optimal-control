@@ -57,19 +57,23 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True,
   fig, axs = plt.subplots(math.ceil(T_divisor / num_cols), num_cols, figsize=(10, 10))
   nt = t_arr.shape[0]
   for i in range(T_divisor):
-    ind = (nt-1) // (T_divisor - 1) * i
+    if i < T_divisor - 1:
+      ind = (nt-1) // (T_divisor - 1) * i
+    else:
+      ind = nt - 1
     if num_cols > 1:
       ax = axs[i // num_cols, i % num_cols]
     else:
       ax = axs[i]
     ax.set_title('t = {:.2f}'.format(t_arr[ind]))
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
+    # ax.set_xlabel('x')
+    # ax.set_ylabel('y')
     # contourf plot
     ct = ax.contourf(x_arr[...,0], x_arr[...,1], phi[ind,...])  # TODO: check domain 
     fig.colorbar(ct, ax=ax)
   if title != '' and title is not None:
     fig.suptitle(title)
+  plt.subplots_adjust(hspace=0.5)
   if tfboard:
     return utils.plot_to_image(fig)
   else:
