@@ -8,7 +8,7 @@ jax.config.update("jax_enable_x64", True)
 
 
 def set_up_J(egno, ndim, period_spatial):
-  if egno > 0:  # sin
+  if egno > 0 and egno != 30:  # sin alp1 x + sin alp2 y
     if ndim == 1:
       x_period = period_spatial[0]
       alpha = 2 * jnp.pi / x_period
@@ -18,6 +18,9 @@ def set_up_J(egno, ndim, period_spatial):
     else:
       raise ValueError("ndim {} not implemented".format(ndim))
     J = lambda x: jnp.sum(jnp.sin(alpha * x), axis = -1)  # [...,ndim] -> [...]
+  elif egno == 30:  # newton: J(x,y) = (sin alp y) * ((period_x/2)**2 - (x- period_x / 2) ** 2)
+    x_period, y_period = period_spatial
+    J = lambda x: jnp.sin(2 * jnp.pi / y_period * x[...,1:2]) * ((x_period / 2)**2 - (x[...,0:1] - x_period / 2) ** 2)
   else:
     raise ValueError("egno {} not implemented".format(egno))
   return J
