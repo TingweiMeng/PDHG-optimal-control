@@ -138,7 +138,10 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     alp1_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[2], x_curr, method='linear')  # [n_sample, n_ctrl]
     alp2_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[3], x_curr, method='linear')  # [n_sample, n_ctrl]
     traj_alp.append(alp1_x + alp2_x + alp1_y + alp2_y)
-    x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
+    if bc_x == 0 and bc_y == 0:
+      x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
+    elif bc_x == 1 and bc_y == 0:
+      x_curr_in_period = np.array([x_curr[:,0], x_curr[:,1] % y_period]).T  # [n_sample, 2]
     f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(f_fn, (alp1_x, alp2_x, alp1_y, alp2_y), x_curr_in_period, T - t_arr[ind])
     vel = np.array([f1_x + f2_x, f1_y + f2_y]).T  # [n_sample, 2]
     # vel = f_fn(alp1_x, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_x, x_curr_in_period, T - t_arr[ind]) + \
