@@ -274,16 +274,17 @@ def main(argv):
   epsl = FLAGS.epsl
   T = FLAGS.T
 
+  x_period = FLAGS.x_period
+  y_period = FLAGS.y_period
+
   if egno == 30:  # Newton, n_ctrl = 1, ndim = 2
     assert ndim == 2
     n_ctrl = 1
     # 0 for periodic, 1 for Neumann, 2 for Dirichlet
     bc = (1,0)
-    x_period, y_period = 4, 2
     x_centered, y_centered = True, True
   else:
     n_ctrl = ndim
-    x_period, y_period = 2, 2
     x_centered, y_centered = False, False
     if ndim == 1:
       bc = 0
@@ -439,6 +440,8 @@ if __name__ == '__main__':
   flags.DEFINE_integer('nt', 11, 'size of t grids')
   flags.DEFINE_integer('nx', 20, 'size of x grids')
   flags.DEFINE_integer('ny', 20, 'size of y grids')
+  flags.DEFINE_float('x_period', 2.0, 'period of x')
+  flags.DEFINE_float('y_period', 2.0, 'period of y')
   
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('T', 1.0, 'final time')
