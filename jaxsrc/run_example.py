@@ -19,9 +19,9 @@ def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0
   ''' dx_t = f(alp_t,x_t,t)dt + sqrt{2 * epsl} dW_t, alp_t = alp(x_t,t) 
   NOTE: the time direction in this function is different from PDEs, time of f is the same with PDEs
   @ parameters:
-    x_arr: [nx], t_arr: [nt], alp: [2, nt-1, nx, n_ctrl], x_init: [n_sample]
+    x_arr: [nx], t_arr: [nt], alp: [2, nt-1, nx], x_init: [n_sample]
   @ returns:
-    traj_alp: [nt-1, n_sample, n_ctrl], traj_x: [nt, n_sample]'''
+    traj_alp: [nt-1, n_sample, 1], traj_x: [nt, n_sample]'''
   traj_alp = []
   traj_x = [x_init]
   x_curr = x_init  # [n_sample]
@@ -29,45 +29,70 @@ def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0
     ind = i
     dt = t_arr[ind + 1] - t_arr[ind]
     # interpolation
-    alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)  # [n_sample, n_ctrl]
-    alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)  # [n_sample, n_ctrl]
+    alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)[:,None]  # [n_sample, 1]
+    alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)[:,None]  # [n_sample, 1]
     traj_alp.append(alp_1 + alp_2)
     # convert x_curr to [0,period]
-    f1, f2 = get_f_vals_1d(f_fn, (alp_1, alp_2), x_curr[:,None] % x_period, T - t_arr[ind])  # [n_sample, 1]
-    vel = f1 + f2  # [n_sample, 1]
+    f1, f2 = get_f_vals_1d(f_fn, (alp_1, alp_2), x_curr[:,None] % x_period, T - t_arr[ind])  # [n_sample, ]
+    vel = f1 + f2  # [n_sample, ]
     # vel = f_fn(alp_1, x_curr % x_period, T - t_arr[ind]) + f_fn(alp_2, x_curr % x_period, T - t_arr[ind])  # [n_sample]
-    x_curr = x_curr + vel[:,0] * dt + jnp.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
+    x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
     traj_x.append(x_curr)
-  traj_alp = jnp.stack(traj_alp, axis = 0)  # [nt-1, n_sample, n_ctrl]
+  traj_alp = jnp.stack(traj_alp, axis = 0)  # [nt-1, n_sample, 1]
   traj_x = jnp.stack(traj_x, axis = 0)  # [nt, n_sample]
   return traj_alp, traj_x
 
-def extend_bdry_2d(x_arr, x_min, x_max, val_arr, period, axis):
+def extend_bdry_2d(x_arr, x_min, x_max, val_arr, period, axis, bc):
   ''' extend bdry periodically for interpolation
   @ parameters:
     x_arr: [n_pts], val_arr: [:,n1, n2, val_dim], period: float, 
     axis: int (along which axis to extend, if axis==1, n_pts==n1 and x_arr==x1_arr; if axis==2, n_pts==n2 and x_arr==x2_arr)
+    bc: int (0 for periodic, 1 for Neumann, 2 for Dirichlet)
   @ returns:
     x_arr: [n_ext+1], val_arr: [:,n_ext+1, n2, val_dim] (if axis==1) or [:,n1, n_ext+1, val_dim] (if axis==2)
   '''
   # compute how many periods and the bounds for the extended array
   n_period_lb = int(np.floor(x_min / period))
   n_period_ub = int(np.floor(x_max / period))
+  # put the original array in the middle
+  n_period_lb = min(n_period_lb, 0)
+  n_period_ub = max(n_period_ub, 0)
   # compute the number of periods
   n_period = n_period_ub - n_period_lb + 1
-  val_arr = np.concatenate([val_arr] * n_period, axis = axis)  # [n_ext, n2, val_dim] or [n1, n_ext, val_dim]
+  if bc == 0:  # periodic
+    val_arr = np.concatenate([val_arr] * n_period, axis = axis)  # [n_ext, n2, val_dim] or [n1, n_ext, val_dim]
+    if axis == 1:
+      val_arr = np.concatenate([val_arr, val_arr[:,:1,:,:]], axis = 1)  # [:, n_ext+1, n2, val_dim]
+    elif axis == 2:
+      val_arr = np.concatenate([val_arr, val_arr[:,:,:1,:]], axis = 2)  # [:, n1, n_ext+1, val_dim]
+    else:
+      raise NotImplementedError
+  else:
+    num_per_period = val_arr.shape[axis]  # n1 or n2
+    if axis == 1:
+      val_left = val_arr[:,0:1,...]  # [..., 1, n2, val_dim]
+      val_right = val_arr[:,-1:,...]  # [..., 1, n2, val_dim]
+      if bc == 2:  # Dirichlet
+        val_left = np.zeros_like(val_left)
+        val_right = np.zeros_like(val_right)
+    elif axis == 2:
+      val_left = val_arr[:,:,0:1,:]  # [..., n1, 1, val_dim]
+      val_right = val_arr[:,:,-1:,:]  # [..., n1, 1, val_dim]
+      if bc == 2:  # Dirichlet
+        val_left = np.zeros_like(val_left)
+        val_right = np.zeros_like(val_right)
+    else:
+      raise NotImplementedError
+    if n_period_lb < 0:
+      val_arr = np.concatenate([val_left] * (-n_period_lb) * num_per_period + [val_arr], axis = axis)  # [..., n_ext1, n2, val_dim] or [..., n1, n_ext1, val_dim]
+    if n_period_ub > 0:
+      val_arr = np.concatenate([val_arr] + [val_right] * (n_period_ub * num_per_period+1), axis = axis)  # [..., n_ext2, n2, val_dim] or [..., n1, n_ext2, val_dim]
   # compute the extended x_arr
   x_arr_new = np.stack([x_arr] * n_period, axis = 0)  # [n_period, n_pts]
   x_arr_new += np.arange(n_period_lb, n_period_ub+1)[:,None] * period  # [n_period, n_pts]
   x_arr_new = np.reshape(x_arr_new, (-1,))  # [n_ext]
   # repeat bdry
   x_arr_new = np.concatenate([x_arr_new, x_arr_new[0:1] + period * n_period], axis = 0)  # [n_ext+1]
-  if axis == 1:
-    val_arr = np.concatenate([val_arr, val_arr[:,:1,:,:]], axis = 1)  # [:, n_ext+1, n2, val_dim]
-  elif axis == 2:
-    val_arr = np.concatenate([val_arr, val_arr[:,:,:1,:]], axis = 2)  # [:, n1, n_ext+1, val_dim]
-  else:
-    raise NotImplementedError
   return x_arr_new, val_arr
 
 
@@ -102,8 +127,6 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
     f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(f_fn, (alp1_x, alp2_x, alp1_y, alp2_y), x_curr_in_period, T - t_arr[ind])
     vel = np.array([f1_x + f2_x, f1_y + f2_y]).T  # [n_sample, 2]
-    print('x_curr: ', x_curr)
-    print('vel: ', vel)
     # vel = f_fn(alp1_x, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_x, x_curr_in_period, T - t_arr[ind]) + \
     #       f_fn(alp1_y, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_y, x_curr_in_period, T - t_arr[ind])  # [n_sample, 2]
     x_curr = x_curr + vel * dt + np.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
@@ -269,10 +292,16 @@ def main(argv):
   fns_dict = set_up_example_fns(egno, ndim, FLAGS.numerical_L_ind)
   if ndim == 1:
     x_arr = jnp.linspace(0.0, x_period, num = nx, endpoint = False)[None,:,None]  # [1, nx, 1]
+    if x_centered:
+      x_arr = x_arr - x_period / 2
     t_arr = jnp.linspace(0.0, T, num = nt)[:,None]  # [nt, 1]
   else:
     x1_arr = jnp.linspace(0.0, x_period, num = nx, endpoint = False)  # [nx]
+    if x_centered:
+      x1_arr = x1_arr - x_period / 2
     x2_arr = jnp.linspace(0.0, y_period, num = ny, endpoint = False)  # [ny]
+    if y_centered:
+      x2_arr = x2_arr - y_period / 2
     x_mesh, y_mesh = jnp.meshgrid(x1_arr, x2_arr, indexing='ij')  # [nx, ny]
     x_arr = jnp.stack([x_mesh, y_mesh], axis = -1)[None,...]  # [1, nx, ny, 2]
     t_arr = jnp.linspace(0.0, T, num = nt)[:,None,None]  # [nt, 1, 1]
@@ -288,7 +317,6 @@ def main(argv):
 
   # results: list of (num_iter, phi, rho, alp)
   phi = results[-1][1]
-  rho = results[-1][2]
   alp = results[-1][3]
 
   if FLAGS.plot:
@@ -321,14 +349,12 @@ def main(argv):
     
     if FLAGS.plot_traj_num_1d > 0:
       # compute trajectories of x. NOTE: time direction of trajs is different from PDE
-      x_plot_lb = 0
-      x_plot_ub = x_period
-      y_plot_lb = 0
-      y_plot_ub = y_period
       # reverse the time direction to be consistent with control
       alp_combined = alp[:,::-1,...]  # [2,nt-1, nx, n_ctrl] or [4,nt-1, nx, ny, n_ctrl]
       if egno == 30:  # for Newton, plot samples are with x' = 0
-        x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d)[:,None] # [n_sample, 1]
+        y_plot_lb = -y_period/2
+        y_plot_ub = y_period/2
+        x_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)[:,None] # [n_sample, 1]
         x_samples = jnp.pad(x_samples, ((0,0), (1,0)), mode = 'constant', constant_values = 0)  # [n_sample, 2]  (x'(0)=0)
         traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], x_period, y_period, T, epsl)
         fig_traj_vel = utils_plot.plot_traj_1d(traj_x[...,0], t_arr[:,0], tfboard = FLAGS.tfboard)
@@ -338,9 +364,13 @@ def main(argv):
         fig_traj_acc = utils_plot.plot_traj_1d(traj_alp[...,0], t_arr[:-1,0], tfboard = FLAGS.tfboard)
         utils_plot.save_fig(fig_traj_acc, 'traj_acc', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
       else:
-        if ndim == 1 or egno == 30:  # for Newton, plot samples are with x' = 0
+        x_plot_lb = 0
+        x_plot_ub = x_period
+        y_plot_lb = 0
+        y_plot_ub = y_period
+        if ndim == 1:
           x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
-          traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined, fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
+          traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined[...,0], fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
           fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
           utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
         elif ndim == 2:
