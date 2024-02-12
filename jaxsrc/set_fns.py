@@ -100,6 +100,9 @@ def set_up_example_fns(egno, ndim, numerical_L_ind):
     elif egno == 2:
       coeff_fn_f1_neg = lambda x_arr, t_arr: jnp.concatenate([(x_arr[...,0:1] - 1.0)**2 + 0.1, jnp.zeros_like(x_arr[...,0:1])], axis = -1)
       coeff_fn_f2_neg = lambda x_arr, t_arr: jnp.concatenate([jnp.zeros_like(x_arr[...,0:1]), (x_arr[...,1:2] - 1.0)**2 + 0.1], axis = -1)
+    elif egno == 3:
+      coeff_fn_f1_neg = lambda x_arr, t_arr: jnp.concatenate([(x_arr[...,0:1]/2 + x_arr[...,1:2]/2 - 1.0)**2 + 0.1, jnp.zeros_like(x_arr[...,0:1])], axis = -1)
+      coeff_fn_f2_neg = lambda x_arr, t_arr: jnp.concatenate([jnp.zeros_like(x_arr[...,0:1]), (x_arr[...,0:1]/2 + x_arr[...,1:2]/2 - 1.0)**2 + 0.1], axis = -1)
     coeff_fn_H = lambda x_arr, t_arr: jnp.ones_like(x_arr)  # [..., ndim] -> [..., n_ctrl]  (n_ctrl = ndim)
     f_fn = lambda alp, x_arr, t_arr: - jnp.concatenate([jnp.sum(coeff_fn_f1_neg(x_arr, t_arr) * alp, axis = -1, keepdims = True), 
                                                         jnp.sum(coeff_fn_f2_neg(x_arr, t_arr) * alp, axis = -1, keepdims = True)], axis = -1)  # [..., 2] -> [..., 2]
