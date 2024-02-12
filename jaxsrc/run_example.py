@@ -387,8 +387,8 @@ def main(argv):
       # reverse the time direction to be consistent with control
       alp_combined = alp[:,::-1,...]  # [2,nt-1, nx, n_ctrl] or [4,nt-1, nx, ny, n_ctrl]
       if egno == 30:  # for Newton, plot samples are with x' = 0
-        y_plot_lb = -y_period/2
-        y_plot_ub = y_period/2
+        y_plot_lb = -y_period/2 + 0.1
+        y_plot_ub = y_period/2 - 0.1
         x_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)[:,None] # [n_sample, 1]
         x_samples = jnp.pad(x_samples, ((0,0), (1,0)), mode = 'constant', constant_values = 0.5)  # [n_sample, 2]  (x'(0)=0)
         x_samples = jnp.concatenate([x_samples, -x_samples], axis = 0)  # [2*n_sample, 2]
