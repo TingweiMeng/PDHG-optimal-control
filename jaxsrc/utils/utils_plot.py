@@ -9,7 +9,7 @@ import utils.utils as utils
 import tensorflow as tf
 import math
 
-def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True):
+def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True, num_cols = 1):
   ''' plot solution and error of 1d HJ PDE
   @ parameters:
     phi, error: [nt, nx]
@@ -57,10 +57,7 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True,
   fig, axs = plt.subplots(math.ceil(T_divisor / num_cols), num_cols, figsize=(10, 10))
   nt = t_arr.shape[0]
   for i in range(T_divisor):
-    if i < T_divisor - 1:
-      ind = (nt-1) // (T_divisor - 1) * i
-    else:
-      ind = nt - 1
+    ind = (nt-1) // (T_divisor - 1) * i
     if num_cols > 1:
       ax = axs[i // num_cols, i % num_cols]
     else:
