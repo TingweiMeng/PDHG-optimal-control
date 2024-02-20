@@ -227,9 +227,13 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
   # plot g
   if save_dir is not None:
     filename = save_dir + '/init_cond.png'
-    fig = plt.figure()
-    plt.contourf(x_arr[0,...,0], x_arr[0,...,1], g[0])
-    plt.colorbar()
+    if ndim == 2:
+      fig = plt.figure()
+      plt.contourf(x_arr[0,...,0], x_arr[0,...,1], g[0])
+      plt.colorbar()
+    elif ndim == 1:
+      fig = plt.figure()
+      plt.plot(x_arr[0,...,0], g[0])
     fig.savefig(filename)
 
   # fv for preconditioning
