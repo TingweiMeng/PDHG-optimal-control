@@ -70,6 +70,38 @@ def compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc):
     raise NotImplementedError
   return fv
 
+
+def compute_Dxxxx_fft_fv(ndim, nspatial, dspatial, bc):
+  # fv used in fft for preconditioning (see Poisson_eqt_solver_1d or Poisson_eqt_solver_2d)
+  # computes the FFT of Laplacian operator
+  if ndim == 1:
+    dx = dspatial[0]
+    nx = nspatial[0]
+    Dx4_vec = jnp.array([6/(dx*dx*dx*dx), -4/(dx*dx*dx*dx), 1/(dx*dx*dx*dx)] + [0.0] * (nx-5) + [1/(dx*dx*dx*dx), -4/(dx*dx*dx*dx)])
+    if bc == 0:
+      fv = jnp.fft.fft(Dx4_vec)  # [nx]
+    elif bc == 1:
+      fv = jax.scipy.fft.dct(Dx4_vec)
+    else:
+      raise NotImplementedError
+  elif ndim == 2:
+    dx, dy = dspatial
+    nx, ny = nspatial
+    bc_x, bc_y = bc
+    Dx4_mat = jnp.array([[6/(dx*dx*dx*dx)+6/(dy*dy*dy*dy), -4/(dy*dy*dy*dy), 1/(dy*dy*dy*dy)] + [0.0] * (ny-5) + [1/(dy*dy*dy*dy), -4/(dy*dy*dy*dy)],
+                        [-4/(dx*dx*dx*dx)] + [0.0] * (ny-1), [1/(dx*dx*dx*dx)] + [0.0] * (ny-1)] + [[0.0]* ny] * (nx-5) + \
+                        [[1/(dx*dx*dx*dx)] + [0.0] * (ny-1), [-4/(dx*dx*dx*dx)] + [0.0] * (ny-1)])  # [nx, ny]
+    if bc_x == 0 and bc_y == 0:
+      fv = jnp.fft.fft2(Dx4_mat)  # [nx, ny]
+    elif bc_x == 1 and bc_y == 0:
+      fv1 = jax.scipy.fft.dct(Dx4_mat, axis = 0)
+      fv = jnp.fft.fft(fv1, axis = -1)
+    else:
+      raise NotImplementedError
+  else:
+    raise NotImplementedError
+  return fv
+
 def H1_precond_1d(source_term, fv, dt, bc, C = 1.0, pow = 1, Ct = 1):
   ''' this solves (C - D_{xx})^pow * phi_update - Ct * D_{tt} phi_update = source_term
   tc is a mixed Neumann-Dirichlet boundary condition (we tested this does not influence much)

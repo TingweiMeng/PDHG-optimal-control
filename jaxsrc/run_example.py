@@ -6,7 +6,7 @@ from datetime import datetime
 from utils.utils_pdhg_solver import PDHG_multi_step
 from solver import save, load_solution
 import update_fns_in_pdhg as pdhg
-from utils.utils_precond import compute_Dxx_fft_fv
+from utils.utils_precond import compute_Dxx_fft_fv, compute_Dxxxx_fft_fv
 from update_fns_in_pdhg import get_f_vals_1d, get_f_vals_2d
 import solver
 import tensorflow as tf
@@ -16,11 +16,12 @@ import scipy.interpolate as interpolate
 import numpy as np
 import matplotlib.pyplot as plt
 
-def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0):
+def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0, interp_method = 'linear'):
   ''' dx_t = f(alp_t,x_t,t)dt + sqrt{2 * epsl} dW_t, alp_t = alp(x_t,t) 
   NOTE: the time direction in this function is different from PDEs, time of f is the same with PDEs
   @ parameters:
     x_arr: [nx], t_arr: [nt], alp: [2, nt-1, nx], x_init: [n_sample]
+    interp_method: str (interpolation method), linear or nearest
   @ returns:
     traj_alp: [nt-1, n_sample, 1], traj_x: [nt, n_sample]'''
   traj_alp = []
@@ -30,8 +31,16 @@ def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0
     ind = i
     dt = t_arr[ind + 1] - t_arr[ind]
     # interpolation
-    alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)[:,None]  # [n_sample, 1]
-    alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)[:,None]  # [n_sample, 1]
+    if interp_method == 'linear':
+      alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)[:,None]  # [n_sample, 1]
+      alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)[:,None]  # [n_sample, 1]
+    elif interp_method == 'nearest':
+      x_curr_module = x_curr % x_period
+      idx = jnp.abs(x_arr - x_curr_module[...,None]).argmin(axis = -1)  # [n_sample]
+      alp_1 = alp[0,ind,idx]  # [n_sample]
+      alp_2 = alp[1,ind,idx]  # [n_sample]
+      alp_1 = alp_1[:,None]  # [n_sample, 1]
+      alp_2 = alp_2[:,None]  # [n_sample, 1]
     traj_alp.append(alp_1 + alp_2)
     # convert x_curr to [0,period]
     f1, f2 = get_f_vals_1d(f_fn, (alp_1, alp_2), x_curr[:,None] % x_period, T - t_arr[ind])  # [n_sample, ]
@@ -107,11 +116,12 @@ def extend_bdry_2d(x_arr, x_min, x_max, val_arr, period, axis, bc, center = Fals
   return x_arr_new, val_arr
 
 
-def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_period, T, bc, center, epsl = 0.0):
+def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_period, T, bc, center, epsl = 0.0, interp_method = 'linear'):
   ''' dx_t = f(alp_t,x_t,t)dt + sqrt{2 * epsl} dW_t, alp_t = alp(x_t,t)
   @ parameters:
     x_arr: [nx, ny, 2], t_arr: [nt], alp: [4, nt-1, nx, ny, n_ctrl], x_init: [n_sample, 2] 
     center: tuple of bool (if the x_arr is centered at 0)
+    interp_method: str (interpolation method), linear or nearest
   @ returns:
     traj_alp: [nt-1, n_sample, n_ctrl], traj_x: [nt, n_sample, 2]  
   '''
@@ -133,10 +143,10 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, x_curr_min[0], x_curr_max[0], alp[:,ind,:,:,:], x_period, bc=bc_x, axis = 1, center = center_x)
     x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, x_curr_min[1], x_curr_max[1], alp_curr, y_period, bc=bc_y, axis = 2, center = center_y)
     # interpolation
-    alp1_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[0], x_curr, method='linear')  # [n_sample, n_ctrl]
-    alp2_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[1], x_curr, method='linear')  # [n_sample, n_ctrl]
-    alp1_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[2], x_curr, method='linear')  # [n_sample, n_ctrl]
-    alp2_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[3], x_curr, method='linear')  # [n_sample, n_ctrl]
+    alp1_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[0], x_curr, method=interp_method)  # [n_sample, n_ctrl]
+    alp2_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[1], x_curr, method=interp_method)  # [n_sample, n_ctrl]
+    alp1_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[2], x_curr, method=interp_method)  # [n_sample, n_ctrl]
+    alp2_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[3], x_curr, method=interp_method)  # [n_sample, n_ctrl]
     traj_alp.append(alp1_x + alp2_x + alp1_y + alp2_y)
     if bc_x == 0 and bc_y == 0:
       x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
@@ -238,7 +248,10 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
     fig.savefig(filename)
 
   # fv for preconditioning
-  fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc)
+  if epsl == 0:
+    fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc)
+  else:
+    fv = compute_Dxxxx_fft_fv(ndim, nspatial, dspatial, bc)
   if ndim == 1:
     fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
       pdhg.update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, bc,
@@ -399,6 +412,10 @@ def main(argv):
     
     if FLAGS.plot_traj_num_1d > 0:
       center = (x_centered, y_centered)
+      if egno >= 20 and egno < 30:  # indicator L, use nearest alpha value
+        interp_method = 'nearest'
+      else:
+        interp_method = 'linear'
       # compute trajectories of x. NOTE: time direction of trajs is different from PDE
       # reverse the time direction to be consistent with control
       alp_combined = alp[:,::-1,...]  # [2,nt-1, nx, n_ctrl] or [4,nt-1, nx, ny, n_ctrl]
@@ -406,8 +423,10 @@ def main(argv):
         y_plot_lb = -y_period/2 + 0.1
         y_plot_ub = y_period/2 - 0.1
         x_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)[:,None] # [n_sample, 1]
+        if epsl > 0:
+          x_samples = 0 * x_samples
         x_samples = jnp.pad(x_samples, ((0,0), (1,0)), mode = 'constant', constant_values = 0.5)  # [n_sample, 2]  (x'(0)=0)
-        x_samples = jnp.concatenate([x_samples, -x_samples], axis = 0)  # [2*n_sample, 2]
+        # x_samples = jnp.concatenate([x_samples, -x_samples], axis = 0)  # [2*n_sample, 2]
         traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], 
                                            x_period, y_period, T, bc, center, epsl)
         fig_traj_vel = utils_plot.plot_traj_1d(traj_x[...,0], t_arr[:,0], tfboard = FLAGS.tfboard)
@@ -423,7 +442,10 @@ def main(argv):
         y_plot_ub = y_period
         if ndim == 1:
           x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
-          traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined[...,0], fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
+          # if epsl > 0:
+          #   x_samples = 0 * x_samples
+          traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined[...,0], fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], 
+                                             x_period, T, epsl, interp_method)
           fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
           utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
         elif ndim == 2:
@@ -431,7 +453,8 @@ def main(argv):
           y_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)
           x_mesh, y_mesh = jnp.meshgrid(x_samples, y_samples, indexing='ij')  # [n_sample, n_sample]
           x_samples = jnp.stack([x_mesh.flatten(), y_mesh.flatten()], axis = -1)  # [n_sample**2, 2]
-          traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], x_period, y_period, T, bc, center, epsl)
+          traj_alp, traj_x = compute_traj_2d(x_samples, alp_combined, fns_dict.f_fn, nt, x1_arr, x2_arr, t_arr[:,0], x_period, y_period, T, bc, center, 
+                                             epsl, interp_method)
           fig_traj_x = utils_plot.plot_traj_2d(traj_x, tfboard = FLAGS.tfboard)
           utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
         
