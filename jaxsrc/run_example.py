@@ -255,7 +255,7 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
                             C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
     if FLAGS.method == 0:
       fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
-        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
+        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps, fv=fv)
     else:
       # fn_update_dual = pdhg.update_dual_Newton_1d
       raise NotImplementedError
@@ -265,7 +265,7 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
                             C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
     if FLAGS.method == 0:
       fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
-        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
+        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps, fv=fv)
     else:
       # fn_update_dual = pdhg.update_dual_Newton_2d
       raise NotImplementedError

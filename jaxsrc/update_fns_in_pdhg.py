@@ -380,9 +380,12 @@ def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
   return res
 
 
-def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc):
+def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc, fv):
   vec = compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr, bc)
-  rho_next = rho_prev + sigma * vec
+  # rho_next = rho_prev + sigma * vec
+  # add dummy 0th row in vec
+  vec = jnp.concatenate([jnp.zeros_like(vec[:1,...]), vec], axis = 0)
+  rho_next = rho_prev + sigma * H1_precond_1d(vec, fv, dt, bc)[1:,...]
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
@@ -396,7 +399,7 @@ def update_alp_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, b
     raise NotImplementedError
   return alp_next
 
-def update_rho_2d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc):
+def update_rho_2d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc, fv):
   vec = compute_HJ_residual_2d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr, bc)
   rho_next = rho_prev + sigma * vec
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx, ny]
@@ -432,7 +435,7 @@ def update_primal_2d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, 
 
 
 @partial(jax.jit, static_argnames=("fns_dict", "ndim", "bc"))
-def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, bc, fns_dict, ndim):
+def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, x_arr, t_arr, bc, fns_dict, ndim, fv):
   if ndim == 1:
     update_alp = update_alp_1d
     update_rho = update_rho_1d
@@ -442,13 +445,13 @@ def update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspati
   else:
     raise NotImplementedError
   alp_next = update_alp(alp_prev, phi_bar, rho_prev, sigma, dspatial, fns_dict, x_arr, t_arr, bc)
-  rho_next = update_rho(rho_prev, phi_bar, alp_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc)
+  rho_next = update_rho(rho_prev, phi_bar, alp_next, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc, fv)
   err = jnp.sum((rho_next - rho_prev) ** 2) / jnp.sum(rho_next ** 2)  # scalar
   for alp_p, alp_n in zip(alp_prev, alp_next):
     err += jnp.sum((alp_n - alp_p) ** 2) / jnp.sum(alp_n ** 2)  # scalar
   return rho_next, alp_next, err
 
-def update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc,
+def update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, fv,
                    rho_alp_iters=10, eps=1e-7):
   '''
   @ parameters:
@@ -456,7 +459,7 @@ def update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, ds
   '''
   for j in range(rho_alp_iters):
     rho_next, alp_next, err = update_dual_oneiter(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl,
-                                                              x_arr, t_arr, bc, fns_dict, ndim)
+                                                              x_arr, t_arr, bc, fns_dict, ndim, fv)
     if err < eps:
       break
     rho_prev = rho_next
