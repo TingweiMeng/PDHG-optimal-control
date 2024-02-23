@@ -3,8 +3,8 @@ import utils.utils as utils
 from einshape import jax_einshape as einshape
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from utils.utils_diff_op import Dx_right_decreasedim, Dx_left_decreasedim
 import utils.utils as utils
+from solver import save, load_middle_solution
 
 
 def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, alp0, x_arr, t_arr, 
@@ -127,7 +127,9 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
 def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr, 
                     ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = 2,
                     epsl = 0.0, stepsz_param=0.9, n_ctrl = None, fv=None,
-                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False):
+                    N_maxiter = 1000000, print_freq = 1000, eps = 1e-6, tfboard = False,
+                    save_middle_dir = None, save_middle_prefix = None,
+                    load_middle_dir = None, load_middle_prefix = None):
   '''
   @ parameters:
     fn_update_primal, fn_update_dual, fns_dict, x_arr: see PDHG_solver_oneiter
@@ -161,23 +163,35 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
     alp1_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
     alp2_y_0 = jnp.zeros([time_step_per_PDHG-1, nx, ny, n_ctrl])
     alp0 = (alp1_x_0, alp2_x_0, alp1_y_0, alp2_y_0)
+
+  if load_middle_dir is not None and load_middle_prefix is not None:
+    results_out = load_middle_solution(load_middle_dir, load_middle_prefix)
+    max_iters, phi_all, rho_all, alp_all, errs_all = results_out[0], results_out[1], results_out[2], results_out[3], results_out[4]
+    init_t_ind = len(phi_all)
+    assert init_t_ind == len(rho_all) and init_t_ind == len(alp_all) and init_t_ind == len(errs_all)
+    if init_t_ind > 0:
+      phi0 = phi_all[-1:]
+      rho0 = rho_all[-1:]
+      alp0 = alp_all[-1:]
+  else:
+    init_t_ind = 0
+    max_iters = 0
+    phi_all = []
+    rho_all = []
+    alp_all = []
+    errs_all = []
+
   print('shape of phi0: ', jnp.shape(phi0), flush = True)
   print('shape of rho0: ', jnp.shape(rho0), flush = True)
   print('shape of alp0: ', jnp.shape(alp0), flush = True)
-
-  phi_all = []
-  rho_all = []
-  alp_all = []
-  errs_all = []
   
   stepsz_param_min = stepsz_param / 10
   stepsz_param_delta = stepsz_param / 10
   sol_nan = False
-  max_err, max_iters = 0.0, 0
   
   tfrecord_ind = 0
   utils.timer.tic("time estimate")  
-  for i in range(nt_PDHG):
+  for i in range(init_t_ind, nt_PDHG):
     print('=================== nt_PDHG = {}, i = {} ==================='.format(nt_PDHG, i), flush=True)
     t_arr = jnp.linspace(i* dt* (time_step_per_PDHG-1), (i+1)* dt* (time_step_per_PDHG-1), num = time_step_per_PDHG)[1:]  # [time_step_per_PDHG-1]
     if ndim == 1:
@@ -191,8 +205,6 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
                                     epsl = epsl, stepsz_param=stepsz_param, fv=fv,
                                     N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, 
                                     tfboard = tfboard, tfrecord_ind = tfrecord_ind)
-      pdhg_iters = results_all[-1][0]
-      tfrecord_ind += pdhg_iters
       if jnp.any(jnp.isnan(errs)):
         if stepsz_param > stepsz_param_min + stepsz_param_delta:  # if nan, decrease step size
           stepsz_param -= stepsz_param_delta
@@ -202,8 +214,8 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
           sol_nan = True
           break
       else:  # if not nan, compute max error and iters, save results, and go to next time block
-        max_err = jnp.maximum(max_err, errs[-1][-1])
-        _, phi_curr, rho_curr, alp_curr = results_all[-1]
+        pdhg_iters, phi_curr, rho_curr, alp_curr = results_all[-1]
+        tfrecord_ind += pdhg_iters
         max_iters = jnp.maximum(max_iters, pdhg_iters)
         # save results
         if i < nt_PDHG-1:  # if not the last time block, exclude the last time step
@@ -224,6 +236,8 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
     samples_processed = pdhg_iters
     utils.timer.estimate_time("time estimate", ratio, samples_processed)
       
+    if save_middle_dir is not None and save_middle_prefix is not None:
+      save(save_middle_dir, save_middle_prefix, [max_iters, phi_all, rho_all, alp_all, errs_all])
     if sol_nan:
       break
   phi_out = jnp.concatenate(phi_all, axis = 0)  # [nt, nx] or [nt, nx, ny]
@@ -235,5 +249,5 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
   if sol_nan:
     print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
   else:
-    print('pdhg conv. Max err is {:.2E}. Max iters is {}'.format(max_err, max_iters), flush = True)
+    print('pdhg conv. Max err is {:.2E}. Max iters is {}'.format(jnp.max(errs_all), max_iters), flush = True)
   return results_out, errs_all

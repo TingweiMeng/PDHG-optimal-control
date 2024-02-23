@@ -85,7 +85,15 @@ def load_solution(dir, filename):
   filename = dir + '/{}.pickle'.format(filename)
   with open(filename, 'rb') as f:
     results, errors = pickle.load(f)
+    print('loaded from {}'.format(filename), flush = True)
   return results, errors
+
+def load_middle_solution(dir, filename):
+  filename = dir + '/{}.pickle'.format(filename)
+  with open(filename, 'rb') as f:
+    results = pickle.load(f)
+    print('loaded from {}'.format(filename), flush = True)
+  return results
 
 def compute_xarr(ndim, n_spatial, period_spatial):
   '''

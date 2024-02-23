@@ -205,7 +205,8 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
 #   return traj_alp, traj_x
 
 def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
-             c_on_rho, time_step_per_PDHG, stepsz_param, N_maxiter, print_freq, eps, bc, save_dir = None):
+             c_on_rho, time_step_per_PDHG, stepsz_param, N_maxiter, print_freq, eps, bc, save_dir = None,
+             save_middle_dir = None, save_middle_prefix = None):
   dt = T / (nt-1)
   dx = x_period / (nx)
   dy = y_period / (ny)
@@ -262,7 +263,8 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
   results, errs_all = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
                                        ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                                        epsl = epsl, stepsz_param=stepsz_param, fv=fv, n_ctrl=n_ctrl,
-                                       N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, tfboard = FLAGS.tfboard)
+                                       N_maxiter = N_maxiter, print_freq = print_freq, eps = eps, tfboard = FLAGS.tfboard,
+                                       save_middle_dir = save_middle_dir, save_middle_prefix = save_middle_prefix)
   return results, errs_all
 
 def main(argv):
@@ -305,6 +307,9 @@ def main(argv):
   if FLAGS.load:
     assert FLAGS.load_timestamp != ''
     time_stamp = FLAGS.load_timestamp
+  elif FLAGS.load_middle:
+    assert FLAGS.load_middle_timestamp != ''
+    time_stamp = FLAGS.load_middle_timestamp
   else:
     time_stamp = datetime.now(pytz.timezone('America/Los_Angeles')).strftime("%Y%m%d-%H%M%S")
     logging.info("current time: " + time_stamp)
@@ -343,8 +348,15 @@ def main(argv):
   if FLAGS.load:
     results, errs_all = load_solution(save_dir, filename_prefix)
   else:
+    if FLAGS.save_middle:
+      save_middle_dir = save_dir
+      save_middle_prefix = filename_prefix
+    else:
+      save_middle_dir = None
+      save_middle_prefix = None
     results, errs_all = solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
-            c_on_rho, FLAGS.time_step_per_PDHG, FLAGS.stepsz_param, FLAGS.N_maxiter, FLAGS.print_freq, FLAGS.eps, bc, save_dir = save_plot_dir)
+            c_on_rho, FLAGS.time_step_per_PDHG, FLAGS.stepsz_param, FLAGS.N_maxiter, FLAGS.print_freq, FLAGS.eps, bc, 
+            save_dir = save_plot_dir, save_middle_dir = save_middle_dir, save_middle_prefix = save_middle_prefix)
     if FLAGS.save:
       save(save_dir, filename_prefix, (results, errs_all))
 
@@ -458,9 +470,11 @@ if __name__ == '__main__':
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
 
   flags.DEFINE_boolean('save', True, 'if save to pickle')
-  flags.DEFINE_boolean('tfboard', False, 'if use tfboard')
+  flags.DEFINE_boolean('save_middle', False, 'if save middle results')
   flags.DEFINE_boolean('load', False, 'if load from pickle')
+  flags.DEFINE_boolean('load_middle', False, 'if load middle results')
   flags.DEFINE_string('load_timestamp', '', 'the timestamp of the folder to load from')
+  flags.DEFINE_boolean('tfboard', False, 'if use tfboard')
   flags.DEFINE_boolean('plot', False, 'if plot')
   flags.DEFINE_integer('plot_traj_num_1d', 0, 'number of trajectories to plot')
 
@@ -470,7 +484,5 @@ if __name__ == '__main__':
   flags.DEFINE_integer('numerical_L_ind', 0, 'index of numerical L')
 
   flags.DEFINE_integer('method', 0, 'method: 0 for alternative update rho and alp, 1 for Newton')
-
-
   
   app.run(main)
