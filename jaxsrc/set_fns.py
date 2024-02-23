@@ -112,20 +112,24 @@ def set_up_example_fns(egno, ndim, numerical_L_ind):
           @ return:
             alp_next: [nt-1, nx, ny, 2] or [nt-1, nx, 1]
       '''
-      alp_next = Dphi[...,None] * coeff_f_neg / param_inv + alp_prev  # [nt-1, nx, ny, 2] or [nt-1, nx, 1]
+      prod = Dphi[...,None] * coeff_f_neg
+      alp_next = prod / param_inv + alp_prev  # [nt-1, nx, ny, 2] or [nt-1, nx, 1]
       # project to the set {alp: |alp| <= coeff_H}
       alp_next = jnp.minimum(coeff_H, jnp.maximum(-coeff_H, alp_next))
+      bool_flag = (param_inv > 0)
+      prod_sign = 2 * (prod >= 0) - 1
+      alp_next = alp_next * bool_flag + prod_sign * coeff_H * (1 - bool_flag)
       return alp_next
   if egno == 30:  # newton: ndim=2, n_ctrl=1, x=(vel, pos), f = [a,x_1], L = |alp|^2/2/c(x), c(x) = 1
     n_ctrl = 1
     f_fn = lambda alp, x_arr, t_arr: jnp.concatenate([alp, x_arr[...,0:1]], axis = -1)  # [..., 1] -> [..., 2]
     coeff_fn_H = lambda x_arr, t_arr: jnp.ones_like(x_arr[...,0:1])  # [..., 2], t -> [..., 1]
     numerical_L_fn, DL_fn, HL_fn = set_up_numerical_L(egno, n_ctrl, numerical_L_ind, coeff_fn_H)
+    coeff_fn_f_neg = None
     def alp_update_fn(alp_prev, Dphi, rho, sigma, x_arr, t_arr):  # Dphi is a tuple including four components
       alp1_x_prev, alp2_x_prev, alp1_y_prev, alp2_y_prev = alp_prev  # [nt-1, nx, ny, 1]
       Dx_right_phi, Dx_left_phi, _, _ = Dphi  # [nt-1, nx, ny]
-      eps = 1e-4
-      param_inv = (rho[...,None] + eps) / sigma  # [nt-1, nx, ny, 1]
+      param_inv = rho[...,None] / sigma  # [nt-1, nx, ny, 1]
       coeff_L = 1 / coeff_fn_H(x_arr, t_arr)  # [nt-1, nx, ny, 2]
       alp1_x_next = (-Dx_right_phi[...,None] + param_inv * alp1_x_prev) / (coeff_L + param_inv)  # [nt-1, nx, ny, 1]
       alp1_x_next *= (f_fn(alp1_x_next, x_arr, t_arr)[...,0:1] >= 0.0)  # [nt-1, nx, ny, 1]
@@ -136,15 +140,16 @@ def set_up_example_fns(egno, ndim, numerical_L_ind):
     # if egno < 20 or egno == 30, L = |alp|^2/2/cH(x,t), cH(x,t) = 1
     # if 20 <= egno < 30, L(alp) = ind_{|alp| <= cH(x,t)} (pointwise <=), cH(x,t) = 1
     n_ctrl = ndim
-    if egno == 1 or egno == 21:  # f1 = alp1, f2 = alp2
+    if egno == 1 or egno == 21:  # f1 = -alp1, f2 = -alp2
       coeff_fn_f1_neg = lambda x_arr, t_arr: jnp.concatenate([jnp.ones_like(x_arr[...,0:1]), jnp.zeros_like(x_arr[...,0:1])], axis = -1)  # [..., ndim] -> [..., ndim]
       coeff_fn_f2_neg = lambda x_arr, t_arr: jnp.concatenate([jnp.zeros_like(x_arr[...,0:1]), jnp.ones_like(x_arr[...,0:1])], axis = -1)  # [..., ndim] -> [..., ndim]
-    elif egno == 2 or egno == 22:  # f1 = ((x-1)^2 + 0.1)*alp1, f2 = ((y-1)^2 + 0.1)*alp2
+    elif egno == 2 or egno == 22:  # f1 = -((x-1)^2 + 0.1)*alp1, f2 = -((y-1)^2 + 0.1)*alp2
       coeff_fn_f1_neg = lambda x_arr, t_arr: jnp.concatenate([(x_arr[...,0:1] - 1.0)**2 + 0.1, jnp.zeros_like(x_arr[...,0:1])], axis = -1)
       coeff_fn_f2_neg = lambda x_arr, t_arr: jnp.concatenate([jnp.zeros_like(x_arr[...,0:1]), (x_arr[...,1:2] - 1.0)**2 + 0.1], axis = -1)
-    elif egno == 3 or egno == 23:  # f1 = ((x/2+y/2-1)^2 - 0.1)*alp1, f2 = ((x/2+y/2-1)^2 - 0.1)*alp2
+    elif egno == 3 or egno == 23:  # f1 = -((x/2+y/2-1)^2 - 0.1)*alp1, f2 = -((x/2+y/2-1)^2 - 0.1)*alp2
       coeff_fn_f1_neg = lambda x_arr, t_arr: jnp.concatenate([(x_arr[...,0:1]/2 + x_arr[...,1:2]/2 - 1.0)**2 + 0.1, jnp.zeros_like(x_arr[...,0:1])], axis = -1)
       coeff_fn_f2_neg = lambda x_arr, t_arr: jnp.concatenate([jnp.zeros_like(x_arr[...,0:1]), (x_arr[...,0:1]/2 + x_arr[...,1:2]/2 - 1.0)**2 + 0.1], axis = -1)
+    # coeff_fn_f_neg = lambda x_arr, t_arr: (coeff_fn_f1_neg(x_arr, t_arr), coeff_fn_f2_neg(x_arr, t_arr))
     coeff_fn_H = lambda x_arr, t_arr: jnp.ones_like(x_arr)  # [..., ndim] -> [..., n_ctrl]  (n_ctrl = ndim)
     f_fn = lambda alp, x_arr, t_arr: - jnp.concatenate([jnp.sum(coeff_fn_f1_neg(x_arr, t_arr) * alp, axis = -1, keepdims = True), 
                                                         jnp.sum(coeff_fn_f2_neg(x_arr, t_arr) * alp, axis = -1, keepdims = True)], axis = -1)  # [..., 2] -> [..., 2]
@@ -156,8 +161,7 @@ def set_up_example_fns(egno, ndim, numerical_L_ind):
     def alp_update_fn(alp_prev, Dphi, rho, sigma, x_arr, t_arr):  # Dphi is a tuple including four components
       alp1_x_prev, alp2_x_prev, alp1_y_prev, alp2_y_prev = alp_prev  # [nt-1, nx, ny, 2]
       Dx_right_phi, Dx_left_phi, Dy_right_phi, Dy_left_phi = Dphi  # [nt-1, nx, ny]
-      eps = 1e-4
-      param_inv = (rho[...,None] + eps) / sigma  # [nt-1, nx, ny, 1]
+      param_inv = rho[...,None] / sigma  # [nt-1, nx, ny, 1]
       coeff_f1_neg = coeff_fn_f1_neg(x_arr, t_arr)  # [nt-1, nx, ny, 2]
       coeff_f2_neg = coeff_fn_f2_neg(x_arr, t_arr)  # [nt-1, nx, ny, 2]
       coeff_H = coeff_fn_H(x_arr, t_arr)  # [nt-1, nx, ny, 2]
@@ -194,11 +198,10 @@ def set_up_example_fns(egno, ndim, numerical_L_ind):
     Df_fn = lambda alp, x_arr, t_arr: - coeff_fn_f_neg(x_arr, t_arr)  # [..., 1] -> [..., 1]
     Hf_fn = lambda alp, x_arr, t_arr: jnp.zeros(alp.shape + alp.shape[-1:])  # [..., 1] -> [..., 1, 1]
     numerical_L_fn, DL_fn, HL_fn = set_up_numerical_L(egno, n_ctrl, numerical_L_ind, coeff_fn_H)
-    def alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr):
+    def alp_update_fn(alp_prev, Dx_phi, rho, sigma, x_arr, t_arr):
+      Dx_right_phi, Dx_left_phi = Dx_phi  # [nt-1, nx]
       alp1_prev, alp2_prev = alp_prev  # [nt-1, nx, 1]
-      eps = 1e-4
-      param_inv = (rho + eps) / sigma
-      param_inv = param_inv[...,None]  # [nt-1, nx, 1]
+      param_inv = rho[...,None] / sigma # [nt-1, nx, 1]
       # Dx_right_phi = Dx_right_phi[...,None]  # [nt-1, nx, 1]
       # Dx_left_phi = Dx_left_phi[...,None]  # [nt-1, nx, 1]
       c_f_neg = coeff_fn_f_neg(x_arr, t_arr)  # [nt-1, nx, 1]

@@ -391,7 +391,7 @@ def update_alp_1d(alp_prev, phi, rho, sigma, dspatial, fns_dict, x_arr, t_arr, b
   Dx_right_phi = Dx_right_decreasedim(phi, dx, bc)  # [nt-1, nx]
   Dx_left_phi = Dx_left_decreasedim(phi, dx, bc)  # [nt-1, nx]
   if 'alp_update_fn' in fns_dict._fields:
-    alp_next = fns_dict.alp_update_fn(alp_prev, Dx_right_phi, Dx_left_phi, rho, sigma, x_arr, t_arr)
+    alp_next = fns_dict.alp_update_fn(alp_prev, (Dx_right_phi, Dx_left_phi), rho, sigma, x_arr, t_arr)
   else:
     raise NotImplementedError
   return alp_next

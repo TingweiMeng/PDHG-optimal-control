@@ -16,7 +16,14 @@ import scipy.interpolate as interpolate
 import numpy as np
 import matplotlib.pyplot as plt
 
-def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0):
+def get_alp_curr(fns_dict, x_curr, t_arr):
+  # x_curr is the x value after process (for periodic bc, it modules by period; for neumann bc, it equals the closed bdry if outside the domain)
+  if 'alp_update_fn' in fns_dict._fields:
+    alp_next = fns_dict.alp_update_fn(alp_prev, (Dx_right_phi, Dx_left_phi), rho, sigma, x_arr, t_arr)
+  else:
+    raise NotImplementedError
+
+def compute_traj_1d(x_init, fns_dict, phi, alp, nt, x_arr, t_arr, x_period, T, epsl = 0.0):
   ''' dx_t = f(alp_t,x_t,t)dt + sqrt{2 * epsl} dW_t, alp_t = alp(x_t,t) 
   NOTE: the time direction in this function is different from PDEs, time of f is the same with PDEs
   @ parameters:
@@ -26,12 +33,28 @@ def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0
   traj_alp = []
   traj_x = [x_init]
   x_curr = x_init  # [n_sample]
+  dx = 0.01
+  zero_vec = jnp.zeros_like(x_curr)
+  zero_alp = (zero_vec[...,None], zero_vec[...,None])
+  f_fn = fns_dict.f_fn
+  alp_update_fn = fns_dict.alp_update_fn
+  print('phi size: ', phi.shape, flush=True)
+  print('x_arr size: ', x_arr.shape, flush=True)
   for i in range(nt-1):
     ind = i
     dt = t_arr[ind + 1] - t_arr[ind]
     # interpolation
-    alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)[:,None]  # [n_sample, 1]
-    alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)[:,None]  # [n_sample, 1]
+    phi_curr = jnp.interp(x_curr, x_arr, phi[ind,:], period = x_period)  # [n_sample]
+    phi_right = jnp.interp(x_curr + dx, x_arr, phi[ind,:], period = x_period)  # [n_sample]
+    phi_left = jnp.interp(x_curr - dx, x_arr, phi[ind,:], period = x_period)  # [n_sample]
+    Dx_right_phi = (phi_right - phi_curr) / dx  # [n_sample]
+    Dx_left_phi = (phi_curr - phi_left) / dx  # [n_sample]
+    # handling periodic
+    x_curr_module = x_curr % x_period
+    alp_next = alp_update_fn(zero_alp, (Dx_right_phi, Dx_left_phi), zero_vec, 0.1, x_curr_module, T - t_arr[ind])
+    alp_1, alp_2 = alp_next
+    # alp_1 = jnp.interp(x_curr, x_arr, alp[0,ind,:], period = x_period)[:,None]  # [n_sample, 1]
+    # alp_2 = jnp.interp(x_curr, x_arr, alp[1,ind,:], period = x_period)[:,None]  # [n_sample, 1]
     traj_alp.append(alp_1 + alp_2)
     # convert x_curr to [0,period]
     f1, f2 = get_f_vals_1d(f_fn, (alp_1, alp_2), x_curr[:,None] % x_period, T - t_arr[ind])  # [n_sample, ]
@@ -130,13 +153,17 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
     # check bound and extend bdry
     x_curr_min = np.min(x_curr, axis = 0)  # [2]
     x_curr_max = np.max(x_curr, axis = 0)  # [2]
+    # print unique values of alp
+    print('alp: ', np.unique(alp[:,ind,:,:,:]), flush=True)
     x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, x_curr_min[0], x_curr_max[0], alp[:,ind,:,:,:], x_period, bc=bc_x, axis = 1, center = center_x)
     x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, x_curr_min[1], x_curr_max[1], alp_curr, y_period, bc=bc_y, axis = 2, center = center_y)
+    print('alp_curr: ', np.unique(alp_curr), flush=True)
     # interpolation
     alp1_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[0], x_curr, method='linear')  # [n_sample, n_ctrl]
     alp2_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[1], x_curr, method='linear')  # [n_sample, n_ctrl]
     alp1_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[2], x_curr, method='linear')  # [n_sample, n_ctrl]
     alp2_y = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr[3], x_curr, method='linear')  # [n_sample, n_ctrl]
+    print('alp1_x: ', alp1_x, 'alp2_x: ', alp2_x, 'alp1_y: ', alp1_y, 'alp2_y: ', alp2_y, flush=True)
     traj_alp.append(alp1_x + alp2_x + alp1_y + alp2_y)
     if bc_x == 0 and bc_y == 0:
       x_curr_in_period = x_curr % np.array([x_period, y_period])  # [n_sample, 2]
@@ -402,6 +429,7 @@ def main(argv):
       # compute trajectories of x. NOTE: time direction of trajs is different from PDE
       # reverse the time direction to be consistent with control
       alp_combined = alp[:,::-1,...]  # [2,nt-1, nx, n_ctrl] or [4,nt-1, nx, ny, n_ctrl]
+      phi_reverse = phi[::-1,...]  # [nt, nx] or [nt, nx, ny]
       if egno == 30:  # for Newton, plot samples are with x' = 0
         y_plot_lb = -y_period/2 + 0.1
         y_plot_ub = y_period/2 - 0.1
@@ -423,7 +451,8 @@ def main(argv):
         y_plot_ub = y_period
         if ndim == 1:
           x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
-          traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined[...,0], fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
+          traj_alp, traj_x = compute_traj_1d(x_samples, fns_dict, phi_reverse, alp_combined[...,0], nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
+          # traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined[...,0], fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], x_period, T, epsl)
           fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
           utils_plot.save_fig(fig_traj_x, 'traj_x', tfboard = FLAGS.tfboard, foldername = save_plot_dir)
         elif ndim == 2:
