@@ -248,7 +248,10 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
     fig.savefig(filename)
 
   # fv for preconditioning
-  fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc)
+  if epsl == 0:
+    fv = compute_Dxx_fft_fv(ndim, nspatial, dspatial, bc)
+  else:
+    fv = compute_Dxxxx_fft_fv(ndim, nspatial, dspatial, bc)
   if ndim == 1:
     fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
       pdhg.update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, bc,
