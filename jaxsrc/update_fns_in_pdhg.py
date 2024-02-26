@@ -382,10 +382,7 @@ def compute_cont_residual_2d(rho, alp, dt, dspatial, fns_dict, c_on_rho, epsl, x
 
 def update_rho_1d(rho_prev, phi, alp, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, bc, fv):
   vec = compute_HJ_residual_1d(phi, alp, dt, dspatial, fns_dict, epsl, x_arr, t_arr, bc)
-  # rho_next = rho_prev + sigma * vec
-  # add dummy 0th row in vec
-  vec = jnp.concatenate([jnp.zeros_like(vec[:1,...]), vec], axis = 0)
-  rho_next = rho_prev + sigma * H1_precond_1d(vec, fv, dt, bc)[1:,...]
+  rho_next = rho_prev + sigma * vec
   rho_next = jnp.maximum(rho_next, 0.0)  # [nt-1, nx]
   return rho_next
 
