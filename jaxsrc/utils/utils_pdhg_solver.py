@@ -226,11 +226,11 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
         alp_all.append(jnp.stack(alp_curr, axis = 0))  # [4, time_step_per_PDHG-1, nx, ny, dim_ctrl] for 2d and [2, time_step_per_PDHG-1, nx, dim_ctrl] for 1d
         errs_all.append(errs)
         # set initial values for next time block
-        g_diff = phi_curr[-1:,...] - phi0[0:1,...]
-        print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
-        phi0 = phi0 + g_diff
-        rho0 = rho_curr
-        alp0 = alp_curr
+        # g_diff = phi_curr[-1:,...] - phi0[0:1,...]
+        # print('g_diff err: ', jnp.linalg.norm(g_diff), flush = True)
+        # phi0 = phi0 + g_diff
+        # rho0 = rho_curr
+        # alp0 = alp_curr
         break
     ratio = (i+1) / nt_PDHG
     samples_processed = pdhg_iters
