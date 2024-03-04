@@ -225,7 +225,7 @@ def main(argv):
   x_period = FLAGS.x_period
   y_period = FLAGS.y_period
 
-  if egno == 30:  # Newton, n_ctrl = 1, ndim = 2
+  if egno == 3:  # Newton, n_ctrl = 1, ndim = 2
     assert ndim == 2
     n_ctrl = 1
     # 0 for periodic, 1 for Neumann, 2 for Dirichlet
@@ -318,7 +318,7 @@ def main(argv):
     else:
       raise NotImplementedError
     
-    if egno == 30:
+    if egno == 3:
       num_cols = 1
     else:
       num_cols = 2
@@ -341,14 +341,14 @@ def main(argv):
     
     if FLAGS.plot_traj_num_1d > 0:
       center = (x_centered, y_centered)
-      if egno >= 20 and egno < 30:  # indicator L, use nearest alpha value
+      if egno == 2:  # indicator L, use nearest alpha value
         interp_method = 'nearest'
       else:
         interp_method = 'linear'
       # compute trajectories of x. NOTE: time direction of trajs is different from PDE
       # reverse the time direction to be consistent with control
       alp_combined = alp[:,::-1,...]  # [2,nt-1, nx, n_ctrl] or [4,nt-1, nx, ny, n_ctrl]
-      if egno == 30:  # for Newton, plot samples are with x' = 0
+      if egno == 3:  # for Newton, plot samples are with x' = 0
         y_plot_lb = -y_period/2 + 0.1
         y_plot_ub = y_period/2 - 0.1
         x_samples = jnp.linspace(y_plot_lb, y_plot_ub, num = FLAGS.plot_traj_num_1d)[:,None] # [n_sample, 1]
@@ -402,7 +402,7 @@ def main(argv):
 if __name__ == '__main__':
   FLAGS = flags.FLAGS
   # problem parameters
-  flags.DEFINE_integer('egno', 1, 'index of example')
+  flags.DEFINE_integer('egno', 1, 'index of example, corresponding to the three examples in the paper')
   flags.DEFINE_integer('ndim', 1, 'spatial dimension')
   flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
   flags.DEFINE_float('x_period', 2.0, 'period of x')
