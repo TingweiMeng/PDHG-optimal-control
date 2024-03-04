@@ -249,5 +249,5 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
   if sol_nan:
     print('pdhg does not conv, please decrease stepsize to be less than {}'.format(stepsz_param), flush = True)
   else:
-    print('pdhg conv. Max err is {:.2E}. Max iters is {}'.format(jnp.max(errs_all), max_iters), flush = True)
+    print('pdhg conv. Max err is {:.2E}. Max iters is {}'.format(jnp.max(jnp.array(errs_all)), max_iters), flush = True)
   return results_out, errs_all
