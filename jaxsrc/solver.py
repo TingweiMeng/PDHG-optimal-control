@@ -10,6 +10,31 @@ from utils.utils import timer
 
 jax.config.update("jax_enable_x64", True)
 
+def save(save_dir, filename, results):
+  if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+  filename_full = save_dir + '/{}.pickle'.format(filename)
+  with open(filename_full, 'wb') as file:
+    pickle.dump(results, file)
+    print('saved to {}'.format(file), flush = True)
+
+def load_solution(dir, filename):
+  filename = dir + '/{}.pickle'.format(filename)
+  with open(filename, 'rb') as f:
+    results, errors = pickle.load(f)
+    print('loaded from {}'.format(filename), flush = True)
+  return results, errors
+
+def load_middle_solution(dir, filename):
+  filename = dir + '/{}.pickle'.format(filename)
+  with open(filename, 'rb') as f:
+    results = pickle.load(f)
+    print('loaded from {}'.format(filename), flush = True)
+  return results
+
+
+
+######################## the following codes are in old version and not used ########################
 
 def compute_HJ_residual_EO_1d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, t_arr):
   '''
@@ -71,29 +96,6 @@ def compute_HJ_residual_EO_2d_general(phi, dt, dspatial, fns_dict, epsl, x_arr, 
   Lap = (dphidx_right - dphidx_left)/dx + (dphidy_right - dphidy_left)/dy
   HJ_residual = (phi[1:,...] - phi[:-1,...])/dt + H_val - epsl * Lap[1:,...]
   return HJ_residual
-
-
-def save(save_dir, filename, results):
-  if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-  filename_full = save_dir + '/{}.pickle'.format(filename)
-  with open(filename_full, 'wb') as file:
-    pickle.dump(results, file)
-    print('saved to {}'.format(file), flush = True)
-
-def load_solution(dir, filename):
-  filename = dir + '/{}.pickle'.format(filename)
-  with open(filename, 'rb') as f:
-    results, errors = pickle.load(f)
-    print('loaded from {}'.format(filename), flush = True)
-  return results, errors
-
-def load_middle_solution(dir, filename):
-  filename = dir + '/{}.pickle'.format(filename)
-  with open(filename, 'rb') as f:
-    results = pickle.load(f)
-    print('loaded from {}'.format(filename), flush = True)
-  return results
 
 def compute_xarr(ndim, n_spatial, period_spatial):
   '''
