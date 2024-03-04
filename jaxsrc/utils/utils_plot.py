@@ -4,7 +4,6 @@ from absl import app, flags
 import matplotlib.pyplot as plt
 from einshape import jax_einshape as einshape
 import os
-# from print_n_plot import read_solution
 import utils.utils as utils
 import tensorflow as tf
 import math
@@ -17,6 +16,9 @@ def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True, num_cols = 1
     t_arr: [nt, 1]
     title: string
     tfboard: bool, if True, return tf image
+    num_cols: unused
+  @ returns:
+    tf image or fig
   '''
   x_arr = jnp.squeeze(x_arr)  # [nx]
   t_arr = jnp.squeeze(t_arr)  # [nt]
@@ -26,8 +28,6 @@ def plot_solution_1d(phi, x_arr, t_arr, title = '', tfboard = True, num_cols = 1
   # plot solution
   phi_trans = einshape('ij->ji', phi)  # [nx, nt]
   fig = plt.figure()
-  # plt.pcolormesh(x_mesh, t_mesh, phi_trans)
-  # plt.contour(x_mesh, t_mesh, phi_trans, colors='k')
   plt.contourf(x_mesh, t_mesh, phi_trans)
   plt.colorbar()
   plt.xlabel('x')
@@ -47,7 +47,9 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True,
     x_arr: [1, nx, ny, 2]
     t_arr: [nt, 1, 1]
     T_divisor: integer, number of figures to plot
+    title: string
     tfboard: bool, if True, return tf image
+    num_cols: integer, number of columns in the figure
   @ returns:
     tf image or fig
   '''
@@ -63,8 +65,6 @@ def plot_solution_2d(phi, x_arr, t_arr, T_divisor=4, title = '', tfboard = True,
     else:
       ax = axs[i]
     ax.set_title('t = {:.2f}'.format(t_arr[ind]))
-    # ax.set_xlabel('x')
-    # ax.set_ylabel('y')
     # contourf plot
     ct = ax.contourf(x_arr[...,0], x_arr[...,1], phi[ind,...])  # TODO: check domain 
     fig.colorbar(ct, ax=ax)
@@ -112,48 +112,3 @@ def save_fig(fig, filename, tfboard = True, foldername = None):
         os.makedirs(foldername)
     fig.savefig(filename + '.png')
     print('figure saved as', filename + '.png', flush=True)
-  # plt.close(fig)
-
-def main(argv):
-  # for key, value in FLAGS.__flags.items():
-  #   print(value.name, ": ", value._value, flush=True)
-
-  # epsl = FLAGS.epsl
-  # T_divisor = FLAGS.T_divisor
-  # egno = FLAGS.egno
-  # num_filename = FLAGS.numerical_sol_filename
-  # ndim = FLAGS.ndim
-
-  # T = 1
-  # if ndim == 1:
-  #   period_spatial = [2]
-  #   plot_fn = plot_solution_1d
-  # else:
-  #   period_spatial = [2, 2]
-  #   plot_fn = plot_solution_2d
-
-  # plot_foldername = "eg{}_{}d/".format(egno, ndim)
-  # if FLAGS.parent_folder != '':
-  #   plot_foldername = FLAGS.parent_folder + '/' + plot_foldername
-  # if not os.path.exists(plot_foldername):
-  #   os.makedirs(plot_foldername)
-
-  # num_sol = read_solution(num_filename)
-  # if num_sol.ndim != ndim + 1:
-  #   raise ValueError("num_sol.ndim != ndim + 1")
-  # nt = num_sol.shape[0]
-  # n_spatial = num_sol.shape[1:]  
-  # plot_fn(num_sol, nt, n_spatial, T, period_spatial, plot_foldername, 'solution', epsl, T_divisor = T_divisor)
-
-  print('plotting done')
-
-
-if __name__ == '__main__':
-  FLAGS = flags.FLAGS
-  flags.DEFINE_integer('egno', 0, 'example number')
-  flags.DEFINE_integer('ndim', 1, 'number of dimensions')
-  flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
-  flags.DEFINE_string('numerical_sol_filename', '', 'the name of the pickle file of numerical solution to read')
-  flags.DEFINE_integer('T_divisor', 4, 'number of figures to plot')
-  flags.DEFINE_string('parent_folder', '', 'the parent folder name')
-  app.run(main)
