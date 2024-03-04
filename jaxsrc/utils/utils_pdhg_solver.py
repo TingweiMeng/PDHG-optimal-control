@@ -1,7 +1,6 @@
 import jax.numpy as jnp
 import utils.utils as utils
 from einshape import jax_einshape as einshape
-import matplotlib.pyplot as plt
 import tensorflow as tf
 import utils.utils as utils
 from solver import save, load_middle_solution
@@ -21,26 +20,28 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
     rho0: [nt-1, nx] for 1d, [nt-1, nx, ny] for 2d
     alp0: (alp1, alp2), where alp1 and alp2 are [nt-1, nx, dim_ctrl] for 1d
           (alp1_x, alp2_x, alp1_y, alp2_y), where alp1_x, alp2_x, alp1_y, alp2_y are [nt-1, nx, ny, dim_ctrl] for 2d
+    x_arr: array that can be broadcasted to [1, nx, 1] for 1d, [1, nx, ny, 2] for 2d
+    t_arr: array that can be broadcasted to [nt-1, 1] for 1d, [nt-1, 1, 1] for 2d
     ndim: int, 1 or 2
     dt, c_on_rho: scalar
     dspatial: (dx, dy) for 2d, (dx,) for 1d
-    x_arr: array that can be broadcasted to [1, nx, 1] for 1d, [1, nx, ny, 2] for 2d
-    t_arr: array that can be broadcasted to [nt-1, 1] for 1d, [nt-1, 1, 1] for 2d
     epsl: scalar, diffusion coefficient
+    stepsz_param: scalar, step size parameter
+    fv: [nx] for 1d, [nx, ny] for 2d, FFT of Laplacian operator, or None if do not use preconditioning
     N_maxiter: int, maximum number of iterations
     print_gap: int, gap for printing and saving results
     eps: scalar, stopping criterion
-    stepsz_param: scalar, step size parameter
-    fv: [nx] for 1d, [nx, ny] for 2d, FFT of Laplacian operator, or None if do not use preconditioning
+    tfboard: bool, whether to use tensorboard
+    tfrecord_ind: int, index for tensorboard
   @ returns:
     results_all: list of tuples, each tuple is (iter, phi_next, rho_next, alp_next)
-    error_all: [N_maxiter//print_freq, 3], primal error, dual error, equation error
+    error_all: [N_maxiter//print_freq, 2], primal error, dual error
   '''
   phi_prev = phi0
   rho_prev = rho0
   alp_prev = alp0
 
-  scale = 1.5
+  scale = 1.5  # adjust the stepsize to balance the primal and dual updates
   tau_phi = stepsz_param / scale
   tau_rho = stepsz_param * scale
   
@@ -48,20 +49,12 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
   results_all = []
 
   for i in range(N_maxiter):
-    # if i == 0:
-    #   err_tol = eps
-    # elif err1 > 1e-4 or err2 > 1e-4:
-    #   err_tol = eps
-    # else:
-    #   err_tol = min(err1, err2) / 10
-    # print('err_tol: ', err_tol, flush = True)
     err_tol = eps
     phi_next = fn_update_primal(phi_prev, rho_prev, c_on_rho, alp_prev, tau_phi, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr)
     # extrapolation
     phi_bar = 2 * phi_next - phi_prev
     rho_next, alp_next = fn_update_dual(phi_bar, rho_prev, c_on_rho, alp_prev, tau_rho, dt, dspatial, epsl, 
                                       fns_dict, x_arr, t_arr, ndim, eps = err_tol)
-
     # primal error
     err1 = jnp.linalg.norm(phi_next - phi_prev) / jnp.linalg.norm(phi_prev)
     # err2: dual error
@@ -90,29 +83,6 @@ def PDHG_solver_oneiter(fn_update_primal, fn_update_dual, fns_dict, phi0, rho0, 
       error_all.append(error)
       print('iteration {}, primal error {:.2E}, dual error {:.2E}, min rho {:.2f}, max rho {:.2f}'.format(i, 
                   error[0],  error[1], jnp.min(rho_next), jnp.max(rho_next)), flush = True)
-      # plot 
-      # if ndim == 2:
-      #   fig = plt.figure()
-      #   plt.contourf(x_arr[0,...,0], x_arr[0,...,1], phi_next[-1,...])
-      #   plt.colorbar()
-      #   plt.savefig('phi.png')
-      #   plt.close()
-      #   fig = plt.figure()
-      #   plt.contourf(x_arr[0,...,0], x_arr[0,...,1], rho_next[-1,...])
-      #   plt.colorbar()
-      #   plt.savefig('rho.png')
-      #   plt.close()
-      #   for j in range(2**ndim):
-      #     fig = plt.figure()
-      #     plt.contourf(x_arr[0,...,0], x_arr[0,...,1], alp_next[j][-1,...,0])
-      #     plt.colorbar()
-      #     plt.savefig('alp_{}_x.png'.format(j))
-      #     plt.close()
-      #     fig = plt.figure()
-      #     plt.contourf(x_arr[0,...,0], x_arr[0,...,1], alp_next[j][-1,...,1])
-      #     plt.colorbar()
-      #     plt.savefig('alp_{}_y.png'.format(j))
-      #     plt.close()
     phi_prev = phi_next
     rho_prev = rho_next
     alp_prev = alp_next
@@ -132,21 +102,23 @@ def PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
                     load_middle_dir = None, load_middle_prefix = None):
   '''
   @ parameters:
-    fn_update_primal, fn_update_dual, fns_dict, x_arr: see PDHG_solver_oneiter
+    fn_update_primal, fn_update_dual, fns_dict: see PDHG_solver_oneiter
     g: [1, nx] for 1d, [1, nx, ny] for 2d
-    ndim, nt, nspatial, c_on_rho, epsl, stepsz_param, fv: see PDHG_solver_oneiter
+    x_arr, ndim, nt, nspatial, c_on_rho, epsl, stepsz_param, fv: see PDHG_solver_oneiter
     dt: scalar, time step size
     dspatial: (dx,) for 1d, (dx, dy) for 2d
     time_step_per_PDHG: int, number of time steps per time block (run PDHG_solver_oneiter in each block)
     n_ctrl: int, number of control variables
-    N_maxiter, print_freq, eps: see PDHG_solver_oneiter
+    N_maxiter, print_freq, eps, tfboard: see PDHG_solver_oneiter
+    save_middle_dir, save_middle_prefix: str, directory and prefix for saving middle results, or None
+    load_middle_dir, load_middle_prefix: str, directory and prefix for loading middle results, or None
   @ returns:
     results_out: list of tuples, each tuple is (iter, phi_next, rho_next, alp_next)
-    error_all: [N_maxiter//print_freq, 3], primal error, dual error, equation error
+    error_all: [N_maxiter//print_freq, 2], primal error, dual error
   '''
   if n_ctrl is None:
     n_ctrl = ndim
-  assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG
+  assert (nt-1) % (time_step_per_PDHG-1) == 0  # make sure nt-1 is divisible by time_step_per_PDHG-1
   nt_PDHG = (nt-1) // (time_step_per_PDHG-1)
   phi0 = einshape("i...->(ki)...", g, k=time_step_per_PDHG)  # repeat each row of g to nt times, [nt, nx] or [nt, nx, ny]
   if ndim == 1:
