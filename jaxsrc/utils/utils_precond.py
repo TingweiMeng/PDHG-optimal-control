@@ -112,6 +112,7 @@ def H1_precond_1d(source_term, fv, dt, bc, C = 1.0, pow = 1, Ct = 1):
     dt: scalar
     bc: 0, 1, 2
     C: postive number (it seems C = 0 and 1 are both fine. Did not test other values)
+    pow, Ct: positive number, we did not test other values
   @return:
     phi_update: [nt, nx] with ic = 0
   '''
