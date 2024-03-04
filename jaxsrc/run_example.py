@@ -6,9 +6,8 @@ from datetime import datetime
 from utils.utils_pdhg_solver import PDHG_multi_step
 from solver import save, load_solution
 import update_fns_in_pdhg as pdhg
-from utils.utils_precond import compute_Dxx_fft_fv, compute_Dxxxx_fft_fv
+from utils.utils_precond import compute_Dxx_fft_fv
 from update_fns_in_pdhg import get_f_vals_1d, get_f_vals_2d
-import solver
 import tensorflow as tf
 import os
 import utils.utils_plot as utils_plot
@@ -45,7 +44,6 @@ def compute_traj_1d(x_init, alp, f_fn, nt, x_arr, t_arr, x_period, T, epsl = 0.0
     # convert x_curr to [0,period]
     f1, f2 = get_f_vals_1d(f_fn, (alp_1, alp_2), x_curr[:,None] % x_period, T - t_arr[ind])  # [n_sample, ]
     vel = f1 + f2  # [n_sample, ]
-    # vel = f_fn(alp_1, x_curr % x_period, T - t_arr[ind]) + f_fn(alp_2, x_curr % x_period, T - t_arr[ind])  # [n_sample]
     x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
     traj_x.append(x_curr)
   traj_alp = jnp.stack(traj_alp, axis = 0)  # [nt-1, n_sample, 1]
@@ -66,7 +64,6 @@ def extend_bdry_2d(x_arr, x_min, x_max, val_arr, period, axis, bc, center = Fals
   if center:
     n_period_lb = int(np.floor(x_min / period + 0.5))
     n_period_ub = int(np.floor(x_max / period + 0.5))
-    # print('x_min: ', x_min, 'x_max: ', x_max, 'n_period_lb: ', n_period_lb, 'n_period_ub: ', n_period_ub, flush=True)
   else:
     n_period_lb = int(np.floor(x_min / period))
     n_period_ub = int(np.floor(x_max / period))
@@ -110,9 +107,6 @@ def extend_bdry_2d(x_arr, x_min, x_max, val_arr, period, axis, bc, center = Fals
   x_arr_new = np.reshape(x_arr_new, (-1,))  # [n_ext]
   # repeat bdry
   x_arr_new = np.concatenate([x_arr_new, x_arr_new[0:1] + period * n_period], axis = 0)  # [n_ext+1]
-  # print('shape of x_arr_new: ', x_arr_new.shape)
-  # print('shape of val_arr: ', val_arr.shape, flush=True)
-  # print('extended min: ', x_arr_new[0], 'extended max: ', x_arr_new[-1], 'required min: ', x_min, 'required max: ', x_max, flush=True)
   return x_arr_new, val_arr
 
 
@@ -154,65 +148,11 @@ def compute_traj_2d(x_init, alp, f_fn, nt, x1_arr, x2_arr, t_arr, x_period, y_pe
       x_curr_in_period = np.array([x_curr[:,0], x_curr[:,1] % y_period]).T  # [n_sample, 2]
     f1_x, f2_x, f1_y, f2_y = get_f_vals_2d(f_fn, (alp1_x, alp2_x, alp1_y, alp2_y), x_curr_in_period, T - t_arr[ind])
     vel = np.array([f1_x + f2_x, f1_y + f2_y]).T  # [n_sample, 2]
-    # vel = f_fn(alp1_x, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_x, x_curr_in_period, T - t_arr[ind]) + \
-    #       f_fn(alp1_y, x_curr_in_period, T - t_arr[ind]) + f_fn(alp2_y, x_curr_in_period, T - t_arr[ind])  # [n_sample, 2]
     x_curr = x_curr + vel * dt + np.sqrt(2 * epsl * dt) * np.random.normal(size = x_curr.shape)
     traj_x.append(x_curr)
   traj_alp = np.stack(traj_alp, axis = 0)  # [nt-1, n_sample, n_ctrl]
   traj_x = np.stack(traj_x, axis = 0)  # [nt, n_sample, 2]
   return traj_alp, traj_x
-
-# def compute_traj_1d_fwd(x_init, alp, fn_f, nt, x_arr, t_arr, x_period, epsl = 0.0):
-#   ''' dx_t = f(alp,x,t)dt + sqrt{2 * epsl} dW_t, alp = alp(x,t)
-#   @ parameters:
-#     x_arr: [nx], t_arr: [nt], alp: [nt-1, nx], x_init: [n_sample]
-#   @ returns:
-#     traj_alp: [nt-1, n_sample], traj_x: [nt, n_sample]'''
-#   traj_alp = []
-#   traj_x = [x_init]
-#   x_curr = x_init  # [n_sample]
-#   # use alp at dt to approximate alp at 0
-#   alp = jnp.concatenate([alp[:1,...], alp], axis = 0)  # [nt, nx+1]
-#   for i in range(nt-1):
-#     ind = i
-#     dt = t_arr[ind+1] - t_arr[ind]
-#     # interpolation
-#     alp_x = jnp.interp(x_curr, x_arr, alp[ind,:], period = x_period)  # [n_sample]
-#     traj_alp.append(alp_x)
-#     vel = fn_f(alp_x, x_curr, t_arr[ind])  # [n_sample]
-#     x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * jnp.random.normal(size = x_curr.shape)
-#     traj_x.append(x_curr)
-#   traj_alp = jnp.stack(traj_alp, axis = 0)  # [nt-1, n_sample]
-#   traj_x = jnp.stack(traj_x, axis = 0)  # [nt, n_sample]
-#   return traj_alp, traj_x
-
-# def compute_traj_2d_fwd(x_init, alp, fn_f, nt, x1_arr, x2_arr, t_arr, x_period, y_period, epsl = 0.0):
-#   ''' dx_t = f(alp,x,t)dt + sqrt{2 * epsl} dW_t, alp = alp(x,t)
-#   @ parameters:
-#     x_arr: [nx, ny, 2], t_arr: [nt], alp: [nt-1, nx, ny, nstate], x_init: [n_sample, 2]
-#   @ returns:
-#     traj_alp: [nt-1, n_sample, nstate], traj_x: [nt, n_sample, 2]  
-#   '''
-#   traj_alp = []
-#   traj_x = [x_init]
-#   x_curr = x_init  # [n_sample, 2]
-#   # use alp at dt to approximate alp at 0
-#   alp = np.concatenate([alp[:1,...], alp], axis = 0)  # [nt, nx+1, ny+1, nstate]
-#   for i in range(nt-1):
-#     ind = i
-#     dt = t_arr[ind+1] - t_arr[ind]
-#     # check bound and extend bdry
-#     x1_grid_curr, alp_curr = extend_bdry_2d(x1_arr, alp[ind,:,:,:], x_period, axis = 0)
-#     x2_grid_curr, alp_curr = extend_bdry_2d(x2_arr, alp_curr, y_period, axis = 1)
-#     # interpolation
-#     alp_x = interpolate.interpn((x1_grid_curr, x2_grid_curr), alp_curr, x_curr, method='linear')  # [n_sample, nstate]
-#     traj_alp.append(alp_x)
-#     vel = fn_f(alp_x, x_curr, t_arr[ind])  # [n_sample, 2]
-#     x_curr = x_curr + vel * dt + jnp.sqrt(2 * epsl * dt) * jnp.random.normal(size = x_curr.shape)
-#     traj_x.append(x_curr)
-#   traj_alp = np.stack(traj_alp, axis = 0)  # [nt-1, n_sample, nstate]
-#   traj_x = np.stack(traj_x, axis = 0)  # [nt, n_sample, 2]
-#   return traj_alp, traj_x
 
 def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period, T, x_arr, 
              c_on_rho, time_step_per_PDHG, stepsz_param, N_maxiter, print_freq, eps, bc, save_dir = None,
@@ -253,23 +193,15 @@ def solve_HJ(ndim, n_ctrl, egno, epsl, fns_dict, nx, ny, nt, x_period, y_period,
     fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
       pdhg.update_primal_1d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, bc,
                             C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
-    if FLAGS.method == 0:
-      fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
+    fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
         pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
-    else:
-      # fn_update_dual = pdhg.update_dual_Newton_1d
-      raise NotImplementedError
   else:
     fn_update_primal = lambda phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr: \
       pdhg.update_primal_2d(phi_prev, rho_prev, c_on_rho, alp_prev, tau, dt, dspatial, fns_dict, fv, epsl, x_arr, t_arr, bc,
                             C = FLAGS.C, pow = FLAGS.pow, Ct = FLAGS.Ct)
-    if FLAGS.method == 0:
-      fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
-        pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
-    else:
-      # fn_update_dual = pdhg.update_dual_Newton_2d
-      raise NotImplementedError
-
+    fn_update_dual = lambda phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, eps: \
+      pdhg.update_dual_alternative(phi_bar, rho_prev, c_on_rho, alp_prev, sigma, dt, dspatial, epsl, fns_dict, x_arr, t_arr, ndim, bc, eps = eps)
+    
   results, errs_all = PDHG_multi_step(fn_update_primal, fn_update_dual, fns_dict, g, x_arr,
                                        ndim, nt, nspatial, dt, dspatial, c_on_rho, time_step_per_PDHG = time_step_per_PDHG,
                                        epsl = epsl, stepsz_param=stepsz_param, fv=fv, n_ctrl=n_ctrl,
@@ -439,8 +371,6 @@ def main(argv):
         y_plot_ub = y_period
         if ndim == 1:
           x_samples = jnp.linspace(x_plot_lb, x_plot_ub, num = FLAGS.plot_traj_num_1d) # [n_sample]
-          # if epsl > 0:
-          #   x_samples = 0 * x_samples
           traj_alp, traj_x = compute_traj_1d(x_samples, alp_combined[...,0], fns_dict.f_fn, nt, x_arr[0,:,0], t_arr[:,0], 
                                              x_period, T, epsl, interp_method)
           fig_traj_x = utils_plot.plot_traj_1d(traj_x, t_arr[:,0], tfboard = FLAGS.tfboard)
@@ -471,38 +401,42 @@ def main(argv):
 
 if __name__ == '__main__':
   FLAGS = flags.FLAGS
+  # problem parameters
   flags.DEFINE_integer('egno', 1, 'index of example')
   flags.DEFINE_integer('ndim', 1, 'spatial dimension')
+  flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
+  flags.DEFINE_float('x_period', 2.0, 'period of x')
+  flags.DEFINE_float('y_period', 2.0, 'period of y')
+  # grid sizes
   flags.DEFINE_integer('nt', 11, 'size of t grids')
   flags.DEFINE_integer('nx', 20, 'size of x grids')
   flags.DEFINE_integer('ny', 20, 'size of y grids')
-  flags.DEFINE_float('x_period', 2.0, 'period of x')
-  flags.DEFINE_float('y_period', 2.0, 'period of y')
-  
-  flags.DEFINE_float('epsl', 0.0, 'diffusion coefficient')
-  flags.DEFINE_float('T', 1.0, 'final time')
-  flags.DEFINE_float('c_on_rho', 10.0, 'the constant added on rho')
-  
+  # PDHG step size tau_varphi, tau_rho, tau_alpha  
+  flags.DEFINE_float('stepsz_param', 0.1, 'step sizes in PDHG')
+  # saving and loading flags
+  flags.DEFINE_boolean('save', True, 'if save the final results to a pickle file')
+  flags.DEFINE_boolean('save_middle', False, 'if save middle results')
+  flags.DEFINE_boolean('load', False, 'if load the final results from the pickle file')
+  flags.DEFINE_boolean('load_middle', False, 'if load middle results')
+  flags.DEFINE_string('load_timestamp', '', 'the timestamp of the folder to load from')
+  # plotting flags
+  flags.DEFINE_boolean('tfboard', False, 'if use tfboard for plotting')
+  flags.DEFINE_boolean('plot', False, 'true if plot the figures of phi and alp, and the trajectories')
+  flags.DEFINE_integer('plot_traj_num_1d', 0, 'number of trajectories to plot')
+
+  # we did not change the hyperparameters in our experiments
+  flags.DEFINE_float('T', 1.0, 'time horizon')
+  flags.DEFINE_float('c_on_rho', 70.0, 'the constant c in the objective function')
+  # PDHG parameters
   flags.DEFINE_integer('time_step_per_PDHG', 2, 'number of time discretization per PDHG iteration')
   flags.DEFINE_integer('N_maxiter', 1000000, 'maximum number of iterations')
   flags.DEFINE_integer('print_freq', 10000, 'print frequency')
-  flags.DEFINE_float('stepsz_param', 0.1, 'default step size constant')
   flags.DEFINE_float('eps', 1e-6, 'the error threshold')
-
-  flags.DEFINE_boolean('save', True, 'if save to pickle')
-  flags.DEFINE_boolean('save_middle', False, 'if save middle results')
-  flags.DEFINE_boolean('load', False, 'if load from pickle')
-  flags.DEFINE_boolean('load_middle', False, 'if load middle results')
-  flags.DEFINE_string('load_timestamp', '', 'the timestamp of the folder to load from')
-  flags.DEFINE_boolean('tfboard', False, 'if use tfboard')
-  flags.DEFINE_boolean('plot', False, 'if plot')
-  flags.DEFINE_integer('plot_traj_num_1d', 0, 'number of trajectories to plot')
-
+  # preconditioning parameters
   flags.DEFINE_float('C', 1.0, 'constant in preconditioning')
   flags.DEFINE_float('pow', 1.0, 'power in preconditioning')
   flags.DEFINE_float('Ct', 1.0, 'constant in preconditioning')
+  # related to def of numerical Lagrangian
   flags.DEFINE_integer('numerical_L_ind', 0, 'index of numerical L')
-
-  flags.DEFINE_integer('method', 0, 'method: 0 for alternative update rho and alp, 1 for Newton')
   
   app.run(main)
